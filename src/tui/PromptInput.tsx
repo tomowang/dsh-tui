@@ -1,12 +1,14 @@
 /**
  * The reader's line of input: free text steers/follows up the agent, and a
  * small set of terminal-only commands control the session. Ctrl+C cancels a
- * running turn or exits when idle — the raw-mode replacement for the
- * readline-based SIGINT handling this component displaces.
+ * running turn while one is active — the raw-mode replacement for the
+ * readline-based SIGINT handling this component displaces. While idle,
+ * pressing Ctrl+C or Ctrl+D twice in a row exits; a single press only arms
+ * the other and shows a hint, and the arm expires after a short timeout.
  * @module @tomowang/dsh-tui/tui/PromptInput
  */
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Box, Text, useInput } from 'ink'
 import TextInput from 'ink-text-input'
 import type { AgentStatus } from '@deepseek-ai/dsh-agent'
@@ -51,9 +53,19 @@ export interface PromptInputProps {
   readonly onCommandMatchesChange?: (count: number) => void
 }
 
+const EXIT_ARM_TIMEOUT_MS = 2000
+
 export function PromptInput({ status, actions, onCommandMatchesChange }: PromptInputProps) {
   const [value, setValue] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
+  const [armedKey, setArmedKey] = useState<'c' | 'd' | null>(null)
+  const armTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (armTimer.current) clearTimeout(armTimer.current)
+    }
+  }, [])
 
   // A trailing space (but no *internal* whitespace) still counts as command
   // mode, so `"/status "` behaves like the old `raw.trim() === '/status'`.
@@ -62,10 +74,38 @@ export function PromptInput({ status, actions, onCommandMatchesChange }: PromptI
   const matches = isCommandMode ? matchSlashCommands(query) : []
   const selected = matches.length === 0 ? 0 : Math.min(selectedIndex, matches.length - 1)
 
+  // A second press of the same key within the timeout confirms exit; a
+  // different key (or an expired arm) starts a fresh arm instead.
+  function armOrConfirmExit(k: 'c' | 'd'): void {
+    if (armedKey === k) {
+      if (armTimer.current) clearTimeout(armTimer.current)
+      actions.shutdown()
+      return
+    }
+    if (armTimer.current) clearTimeout(armTimer.current)
+    setArmedKey(k)
+    armTimer.current = setTimeout(() => {
+      armTimer.current = null
+      setArmedKey(null)
+    }, EXIT_ARM_TIMEOUT_MS)
+  }
+
   useInput((input, key) => {
     if (key.ctrl && input === 'c') {
-      if (status === 'running') actions.cancel()
-      else actions.shutdown()
+      if (status === 'running') {
+        actions.cancel()
+        return
+      }
+      armOrConfirmExit('c')
+      return
+    }
+    if (key.ctrl && input === 'd') {
+      // ink-text-input's own useInput handler runs before this one and,
+      // lacking a Ctrl+D case, inserts a literal "d" into the buffer —
+      // revert that before deciding what Ctrl+D should actually do.
+      setValue(value)
+      if (status === 'running') return
+      armOrConfirmExit('d')
       return
     }
     if (isCommandMode && matches.length > 0) {
@@ -114,6 +154,7 @@ export function PromptInput({ status, actions, onCommandMatchesChange }: PromptI
           ))}
         </Box>
       )}
+      {armedKey !== null && <Text dimColor>Press Ctrl+{armedKey.toUpperCase()} again to exit</Text>}
       <Box borderStyle="round" borderColor="white" paddingX={1}>
         <Text>{'› '}</Text>
         <TextInput value={value} onChange={handleValueChange} onSubmit={handleSubmit} />
