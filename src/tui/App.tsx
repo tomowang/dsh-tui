@@ -131,7 +131,6 @@ export function App({ store, actions, sessionId, provider, model, version, cwd, 
           <>
             {state.notice === undefined ? null : <Text>{state.notice}</Text>}
             <QueuedIndicator queued={state.queued} />
-            <StatsLine line={statsLine} />
             <StatusBar
               sessionId={sessionId}
               provider={provider}
@@ -147,6 +146,7 @@ export function App({ store, actions, sessionId, provider, model, version, cwd, 
               history={promptHistory}
             />
             <PermissionIndicator permission={state.permission} />
+            <StatsLine line={statsLine} />
           </>
         )}
       </Box>
