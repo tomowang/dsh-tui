@@ -10,6 +10,7 @@ import { useState } from 'react'
 import { Box, Text, useInput } from 'ink'
 import TextInput from 'ink-text-input'
 import type { AgentStatus } from '@deepseek-ai/dsh-agent'
+import { matchSlashCommands, runSlashCommand } from './commands.js'
 import type { ProviderDraft, ProviderRow } from './modelProfile/types.js'
 
 export interface TuiActions {
@@ -51,37 +52,62 @@ export interface PromptInputProps {
 
 export function PromptInput({ status, actions }: PromptInputProps) {
   const [value, setValue] = useState('')
+  const [selectedIndex, setSelectedIndex] = useState(0)
+
+  // A trailing space (but no *internal* whitespace) still counts as command
+  // mode, so `"/status "` behaves like the old `raw.trim() === '/status'`.
+  const query = value.trim()
+  const isCommandMode = value.startsWith('/') && !/\s/.test(query)
+  const matches = isCommandMode ? matchSlashCommands(query) : []
+  const selected = matches.length === 0 ? 0 : Math.min(selectedIndex, matches.length - 1)
 
   useInput((input, key) => {
     if (key.ctrl && input === 'c') {
       if (status === 'running') actions.cancel()
       else actions.shutdown()
+      return
+    }
+    if (isCommandMode && matches.length > 0) {
+      if (key.upArrow) {
+        setSelectedIndex(i => (i - 1 + matches.length) % matches.length)
+        return
+      }
+      if (key.downArrow) {
+        setSelectedIndex(i => (i + 1) % matches.length)
+        return
+      }
     }
   })
 
   function handleSubmit(raw: string): void {
     setValue('')
-    const text = raw.trim()
-    if (text === '') return
-    if (text === '/exit' || text === '/quit') {
-      actions.shutdown()
+    setSelectedIndex(0)
+    const trimmed = raw.trim()
+    if (trimmed === '') return
+    const commandMatches = trimmed.startsWith('/') && !/\s/.test(trimmed) ? matchSlashCommands(trimmed) : []
+    if (commandMatches.length > 0) {
+      const chosen = commandMatches[Math.min(selectedIndex, commandMatches.length - 1)]
+      runSlashCommand(chosen.command, actions)
       return
     }
-    if (text === '/status') {
-      actions.status()
-      return
-    }
-    if (text === '/model') {
-      actions.openModelProfile()
-      return
-    }
-    actions.send(text)
+    actions.send(trimmed)
   }
 
   return (
-    <Box borderStyle="round" borderColor="white" paddingX={1}>
-      <Text>{'› '}</Text>
-      <TextInput value={value} onChange={setValue} onSubmit={handleSubmit} />
+    <Box flexDirection="column">
+      {isCommandMode && matches.length > 0 && (
+        <Box flexDirection="column" paddingX={1}>
+          {matches.map((cmd, i) => (
+            <Text key={cmd.command} inverse={i === selected}>
+              {cmd.command.padEnd(10)} {cmd.description}
+            </Text>
+          ))}
+        </Box>
+      )}
+      <Box borderStyle="round" borderColor="white" paddingX={1}>
+        <Text>{'› '}</Text>
+        <TextInput value={value} onChange={setValue} onSubmit={handleSubmit} />
+      </Box>
     </Box>
   )
 }
