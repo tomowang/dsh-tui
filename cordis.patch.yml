@@ -1,0 +1,26 @@
+# The dsh-tui bundle patch: interactive terminal mode directly over dsh-base.
+# It mounts no Host, HTTP server, Web runtime, or browser plugin. An ordinary
+# provider plugin injects `cmdlineArgs`, parses this app's flags
+# (`dsh --profile tui [--resume <id>]`), then the interactive runner creates
+# or resumes an Agent through the core registry and drives it from the TTY.
+
+- id: system-prompt
+  config:
+    persona: >-
+      You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.
+
+# Module-reload HMR redraws would fight the interactive terminal; the
+# launcher's watch-only fallback still keeps the user patch layers live.
+- id: hmr
+  disabled: true
+
+- insert:
+    - id: tui-startup
+      name: '@tomowang/dsh-tui/startup'
+
+    # Reads its startup values from the ordinary tuiStartup provider.
+    - id: tui
+      name: '@tomowang/dsh-tui'
+      inject: [tuiStartup]
+      config:
+        resume: !!js ctx.tuiStartup.resume
