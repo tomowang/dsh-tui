@@ -45,10 +45,19 @@ function textOf(content: readonly ContentBlock[]): string {
 export function formatEvent(event: SessionEvent, options: RenderOptions): string | undefined {
   switch (event.type) {
     case 'user/message': {
-      // Live input was just typed by the reader; only replay re-shows it.
-      if (!options.replay) return undefined
-      const text = textOf(event.data.content)
-      return text === '' ? undefined : `${dim('you ›')} ${text}`
+      const source = event.data.source
+      // Only a direct human prompt gets the full transcript line; synthetic
+      // context (`agent.inject()` — subdir AGENTS.md, skill content, cron
+      // notices, …) collapses to one label instead of dumping its content.
+      if (source.kind === 'user') {
+        const text = textOf(event.data.content)
+        return text === '' ? undefined : `${dim('you ›')} ${text}`
+      }
+      if (source.kind === 'plugin') {
+        const summary = source.form === 'notice' ? source.summary : undefined
+        return `${dim('⊕ context ›')} ${source.plugin}${summary === undefined ? '' : ` · ${summary}`}`
+      }
+      return `${dim('⊕ context ›')} ${source.kind}`
     }
     case 'assistant/message': {
       const text = textOf(event.data.message.content)
