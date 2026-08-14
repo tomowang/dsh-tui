@@ -21,17 +21,24 @@ import type { Agent, ModelSelectionRef } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
+import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type { SettingsPathOp } from '@deepseek-ai/dsh-settings'
-// Empty type imports carry the loader Context merge for the mount await
-// and the cmdline Context merge for the appExit host value.
+// Empty type imports carry the loader Context merge for the mount await,
+// the cmdline Context merge for the appExit host value, the
+// permission-presets Context merge for ctx.permissionPresets, and the
+// sandbox-policy/user-approval SessionEventMap merges for the 'sandbox/mode'
+// and 'approval/policy' event types the permission-preset knobs write.
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-cmdline'
+import type {} from '@deepseek-ai/dsh-permission-presets'
+import type {} from '@deepseek-ai/dsh-sandbox-policy'
+import type {} from '@deepseek-ai/dsh-user-approval'
 import type { Instance } from 'ink'
 
 import { TuiStore } from './tui/store.js'
-import type { ModelProfileOverlayState } from './tui/store.js'
+import type { ModelProfileOverlayState, PermissionState } from './tui/store.js'
 import { mountTui } from './tui/mount.js'
 import type { TuiActions } from './tui/App.js'
 import { readPackageVersion } from './version.js'
@@ -125,6 +132,10 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
   const settings = ctx.get('settings')
   const credentials = ctx.get('credentials')
   const llm = ctx.get('llm')
+  // Same optional-service pattern: not every profile composes permission
+  // presets, so the indicator/keybinding degrade instead of the TUI refusing
+  // to start.
+  const permissionPresets = ctx.get('permissionPresets')
 
   /** Guard for the three optional model-profile services, together or not at all. */
   function requireModelProfileServices():
@@ -132,6 +143,12 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
     | undefined {
     if (settings === undefined || credentials === undefined || llm === undefined) return undefined
     return { settings, credentials, llm }
+  }
+
+  /** The session's current permission preset, or `undefined` without a mounted service. */
+  function permissionState(events: readonly SessionEvent[]): PermissionState | undefined {
+    if (permissionPresets === undefined) return undefined
+    return { current: permissionPresets.current(events), names: permissionPresets.names }
   }
 
   /** The open `/model` overlay's sub-state, or `undefined` while it's closed. */
@@ -287,6 +304,7 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
     const store = new TuiStore({ events: agent.session.events })
     store.setStatus(agent.status)
     store.setQueued([...agent.inbox.nextStep, ...agent.inbox.nextTurn])
+    store.setPermission(permissionState(agent.session.events))
 
     const resnapshotQueue = (): void => {
       store.setQueued([...agent.inbox.nextStep, ...agent.inbox.nextTurn])
@@ -295,6 +313,9 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
       ctx.on('session/event', (session, event) => {
         if (session !== agent.session) return
         store.appendEvent(event)
+        if (event.type === 'permission/preset' || event.type === 'sandbox/mode' || event.type === 'approval/policy') {
+          store.setPermission(permissionState(agent.session.events))
+        }
       }),
       ctx.on('agent/status', (payload) => {
         if (payload.agent !== agent) return
@@ -336,6 +357,17 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
       },
       clear() {
         void clearSession()
+      },
+      cyclePermission() {
+        if (permissionPresets === undefined) {
+          store.setNotice('permission presets are not available in this profile')
+          return
+        }
+        const names = permissionPresets.names
+        if (names.length === 0) return
+        const index = names.indexOf(permissionPresets.current(agent.session.events))
+        // -1 (the `custom` state) + 1 = 0, so an unmatched current value lands on the first preset.
+        permissionPresets.set(agent.session, names[(index + 1) % names.length])
       },
 
       openModelProfile() {

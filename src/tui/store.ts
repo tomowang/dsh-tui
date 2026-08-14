@@ -33,6 +33,14 @@ export type Overlay =
   | { readonly kind: 'none' }
   | { readonly kind: 'modelProfile'; readonly modelProfile: ModelProfileOverlayState }
 
+/** The session's current permission preset, folded from `ctx.permissionPresets`. */
+export interface PermissionState {
+  /** The effective preset name, or `'custom'` when the knobs match no table entry. */
+  readonly current: string
+  /** Every switchable preset name, in table declaration order. */
+  readonly names: readonly string[]
+}
+
 /** One immutable snapshot of everything the TUI renders. */
 export interface TuiState {
   /** Session log so far, in append order. */
@@ -47,6 +55,8 @@ export interface TuiState {
   readonly notice: string | undefined
   /** Active full-screen overlay, if any, replacing the prompt/status live region. */
   readonly overlay: Overlay
+  /** Current permission preset, or `undefined` when `ctx.permissionPresets` isn't composed in this profile. */
+  readonly permission: PermissionState | undefined
 }
 
 const CLOSED_OVERLAY: Overlay = { kind: 'none' }
@@ -69,6 +79,7 @@ export class TuiStore {
       queued: [],
       notice: undefined,
       overlay: CLOSED_OVERLAY,
+      permission: undefined,
     }
   }
 
@@ -97,6 +108,10 @@ export class TuiStore {
 
   setNotice(notice: string | undefined): void {
     this.set({ notice })
+  }
+
+  setPermission(permission: PermissionState | undefined): void {
+    this.set({ permission })
   }
 
   /** Open the `/model` overlay to a fresh, loading provider list. */

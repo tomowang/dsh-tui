@@ -14,6 +14,7 @@ import { Banner } from './Banner.js'
 import { EventLine } from './EventLine.js'
 import { StatusBar } from './StatusBar.js'
 import { QueuedIndicator } from './QueuedIndicator.js'
+import { PermissionIndicator } from './PermissionIndicator.js'
 import { PromptInput, type TuiActions } from './PromptInput.js'
 import { ModelProfileOverlay } from './modelProfile/ModelProfileOverlay.js'
 import { buildBannerText } from './bannerText.js'
@@ -95,8 +96,9 @@ export function App({ store, actions, sessionId, provider, model, version, cwd, 
     // 2 accounts for the prompt box's top/bottom border; promptLineCount is
     // its content rows, which grow with a multi-line draft.
     const promptLines = 2 + promptLineCount + commandMatchesCount
-    return noticeLines + queuedLines + statusBarLines + promptLines
-  }, [state.overlay, state.notice, state.queued.length, commandMatchesCount, promptLineCount])
+    const permissionLines = state.permission === undefined ? 0 : 1
+    return noticeLines + queuedLines + statusBarLines + promptLines + permissionLines
+  }, [state.overlay, state.notice, state.queued.length, commandMatchesCount, promptLineCount, state.permission])
 
   // Ink appends a trailing newline to interactive frames (output + '\n'),
   // so we subtract 1 to ensure total rendered lines don't exceed terminal rows.
@@ -135,6 +137,7 @@ export function App({ store, actions, sessionId, provider, model, version, cwd, 
               onLinesChange={setPromptLineCount}
               history={promptHistory}
             />
+            <PermissionIndicator permission={state.permission} />
           </>
         )}
       </Box>

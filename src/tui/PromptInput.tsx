@@ -44,6 +44,8 @@ export interface TuiActions {
   status(): void
   /** Flush the current session, then start a brand-new one in a fresh screen. */
   clear(): void
+  /** Switch to the next permission preset (read-only/workspace-write/full-access), wrapping around. */
+  cyclePermission(): void
 
   /** Open the `/model` provider-profile overlay and start loading providers. */
   openModelProfile(): void
@@ -351,6 +353,13 @@ export function PromptInput({ status, actions, onCommandMatchesChange, onLinesCh
   }
 
   useInput((input, key) => {
+    // Shift+Tab cycles the permission preset, mirroring Claude Code's mode
+    // switcher. Terminals send the classic `\x1b[Z` sequence, which Ink
+    // reports as `key.tab` with `key.shift` set — distinct from plain Tab.
+    if (key.tab && key.shift) {
+      actions.cyclePermission()
+      return
+    }
     if (key.ctrl && input === 'c') {
       if (status === 'running') {
         actions.cancel()
