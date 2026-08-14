@@ -9,6 +9,8 @@
 
 import type { AgentStatus } from '@deepseek-ai/dsh-agent'
 import type { SessionEvent, UserMessage } from '@deepseek-ai/dsh-session'
+import type { SessionStatsProjection } from '@deepseek-ai/dsh-session-stats'
+import type { TokenUsageProjection } from '@deepseek-ai/dsh-token-meter'
 import type { DiscoveredModel, ProviderDraft, ProviderRow } from './modelProfile/types.js'
 
 /** Which pane of the `/model` overlay is showing. */
@@ -32,6 +34,14 @@ export interface ModelProfileOverlayState {
 export type Overlay =
   | { readonly kind: 'none' }
   | { readonly kind: 'modelProfile'; readonly modelProfile: ModelProfileOverlayState }
+
+/** Whole-log figures for the status bar's stats line; each side is `undefined` without its projection unit mounted. */
+export interface StatsSnapshot {
+  readonly sessionStats: SessionStatsProjection | undefined
+  readonly tokenUsage: TokenUsageProjection | undefined
+}
+
+const EMPTY_STATS: StatsSnapshot = { sessionStats: undefined, tokenUsage: undefined }
 
 /** The session's current permission preset, folded from `ctx.permissionPresets`. */
 export interface PermissionState {
@@ -57,6 +67,8 @@ export interface TuiState {
   readonly overlay: Overlay
   /** Current permission preset, or `undefined` when `ctx.permissionPresets` isn't composed in this profile. */
   readonly permission: PermissionState | undefined
+  /** Whole-log stats-line figures, or `undefined` sides when `ctx.sessionProjections` isn't composed in this profile. */
+  readonly stats: StatsSnapshot
 }
 
 const CLOSED_OVERLAY: Overlay = { kind: 'none' }
@@ -80,6 +92,7 @@ export class TuiStore {
       notice: undefined,
       overlay: CLOSED_OVERLAY,
       permission: undefined,
+      stats: EMPTY_STATS,
     }
   }
 
@@ -112,6 +125,10 @@ export class TuiStore {
 
   setPermission(permission: PermissionState | undefined): void {
     this.set({ permission })
+  }
+
+  setStats(stats: StatsSnapshot): void {
+    this.set({ stats })
   }
 
   /** Open the `/model` overlay to a fresh, loading provider list. */

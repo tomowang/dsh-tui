@@ -21,7 +21,7 @@ import type { Agent, ModelSelectionRef } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type { SettingsPathOp } from '@deepseek-ai/dsh-settings'
@@ -34,11 +34,16 @@ import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-cmdline'
 import type {} from '@deepseek-ai/dsh-permission-presets'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
+// Type-only: resolves ctx.sessionProjections and its sessionStats/tokenUsage
+// SessionProjectionMap entries for the status bar's stats line.
+import type {} from '@deepseek-ai/dsh-session-projection'
+import type {} from '@deepseek-ai/dsh-session-stats'
+import type {} from '@deepseek-ai/dsh-token-meter'
 import type {} from '@deepseek-ai/dsh-user-approval'
 import type { Instance } from 'ink'
 
 import { TuiStore } from './tui/store.js'
-import type { ModelProfileOverlayState, PermissionState } from './tui/store.js'
+import type { ModelProfileOverlayState, PermissionState, StatsSnapshot } from './tui/store.js'
 import { mountTui } from './tui/mount.js'
 import type { TuiActions } from './tui/App.js'
 import { readPackageVersion } from './version.js'
@@ -136,6 +141,10 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
   // presets, so the indicator/keybinding degrade instead of the TUI refusing
   // to start.
   const permissionPresets = ctx.get('permissionPresets')
+  // Same optional-service pattern: a lean profile without the projection
+  // registry (or without dsh-tui's own session-stats/token-meter rows) just
+  // shows no stats line instead of the TUI refusing to start.
+  const sessionProjections = ctx.get('sessionProjections')
 
   /** Guard for the three optional model-profile services, together or not at all. */
   function requireModelProfileServices():
@@ -149,6 +158,13 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
   function permissionState(events: readonly SessionEvent[]): PermissionState | undefined {
     if (permissionPresets === undefined) return undefined
     return { current: permissionPresets.current(events), names: permissionPresets.names }
+  }
+
+  /** The session's current stats-line figures, or empty sides without a mounted registry/unit. */
+  function statsSnapshot(session: Session): StatsSnapshot {
+    if (sessionProjections === undefined) return { sessionStats: undefined, tokenUsage: undefined }
+    const { values } = sessionProjections.snapshot(session)
+    return { sessionStats: values.sessionStats, tokenUsage: values.tokenUsage }
   }
 
   /** The open `/model` overlay's sub-state, or `undefined` while it's closed. */
@@ -275,7 +291,7 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
     readonly instance: Instance
     /** From `AgentHandle.dispose`: stops the loop and drops it from the live session store (not disk). */
     readonly disposeAgent: () => Promise<void>
-    readonly unsubscribers: readonly (() => boolean)[]
+    readonly unsubscribers: readonly (() => unknown)[]
     closing: boolean
   }
 
@@ -305,11 +321,12 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
     store.setStatus(agent.status)
     store.setQueued([...agent.inbox.nextStep, ...agent.inbox.nextTurn])
     store.setPermission(permissionState(agent.session.events))
+    store.setStats(statsSnapshot(agent.session))
 
     const resnapshotQueue = (): void => {
       store.setQueued([...agent.inbox.nextStep, ...agent.inbox.nextTurn])
     }
-    const unsubscribers = [
+    const unsubscribers: (() => unknown)[] = [
       ctx.on('session/event', (session, event) => {
         if (session !== agent.session) return
         store.appendEvent(event)
@@ -334,6 +351,16 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
         resnapshotQueue()
       }),
     ]
+    // The registry's change feed lives on wherever it was constructed, not on
+    // this call site's fiber, so its disposer must be collected here rather
+    // than relying on effect teardown.
+    if (sessionProjections !== undefined) {
+      unsubscribers.push(sessionProjections.onChanged((session, key) => {
+        if (session !== agent.session) return
+        if (key !== 'sessionStats' && key !== 'tokenUsage') return
+        store.setStats(statsSnapshot(agent.session))
+      }))
+    }
 
     const actions: TuiActions = {
       send(text) {

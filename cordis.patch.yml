@@ -24,3 +24,11 @@
       inject: [tuiStartup]
       config:
         resume: !!js ctx.tuiStartup.resume
+
+    # Whole-log turn/step counts for the status bar's stats line (the
+    # sessionStats projection key); dsh-base mounts the registry itself but
+    # only dsh-web-app's bundle mounts this unit, so the TUI mounts its own
+    # copy. The registry is a base-layer row, so this activates regardless of
+    # insertion order.
+    - id: session-stats
+      name: '@deepseek-ai/dsh-session-stats'

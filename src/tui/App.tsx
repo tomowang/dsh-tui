@@ -13,11 +13,13 @@ import type { TuiStore } from './store.js'
 import { Banner } from './Banner.js'
 import { EventLine } from './EventLine.js'
 import { StatusBar } from './StatusBar.js'
+import { StatsLine } from './StatsLine.js'
 import { QueuedIndicator } from './QueuedIndicator.js'
 import { PermissionIndicator } from './PermissionIndicator.js'
 import { PromptInput, type TuiActions } from './PromptInput.js'
 import { ModelProfileOverlay } from './modelProfile/ModelProfileOverlay.js'
 import { buildBannerText } from './bannerText.js'
+import { buildStatsLine } from './statsFormat.js'
 import { formatEvent } from '../render.js'
 
 export type { TuiActions } from './PromptInput.js'
@@ -77,6 +79,11 @@ export function App({ store, actions, sessionId, provider, model, version, cwd, 
     return bannerLines + eventLines
   }, [version, provider, model, cwd, columns, state.events, state.replayThrough])
 
+  const statsLine = useMemo(
+    () => buildStatsLine(state.stats.sessionStats, state.stats.tokenUsage),
+    [state.stats],
+  )
+
   const dynamicLines = useMemo(() => {
     if (state.overlay.kind === 'modelProfile') {
       const mp = state.overlay.modelProfile
@@ -93,12 +100,13 @@ export function App({ store, actions, sessionId, provider, model, version, cwd, 
     const noticeLines = state.notice === undefined ? 0 : state.notice.split('\n').length
     const queuedLines = state.queued.length
     const statusBarLines = 1
+    const statsLines = statsLine === '' ? 0 : 1
     // 2 accounts for the prompt box's top/bottom border; promptLineCount is
     // its content rows, which grow with a multi-line draft.
     const promptLines = 2 + promptLineCount + commandMatchesCount
     const permissionLines = state.permission === undefined ? 0 : 1
-    return noticeLines + queuedLines + statusBarLines + promptLines + permissionLines
-  }, [state.overlay, state.notice, state.queued.length, commandMatchesCount, promptLineCount, state.permission])
+    return noticeLines + queuedLines + statusBarLines + statsLines + promptLines + permissionLines
+  }, [state.overlay, state.notice, state.queued.length, commandMatchesCount, promptLineCount, state.permission, statsLine])
 
   // Ink appends a trailing newline to interactive frames (output + '\n'),
   // so we subtract 1 to ensure total rendered lines don't exceed terminal rows.
@@ -123,6 +131,7 @@ export function App({ store, actions, sessionId, provider, model, version, cwd, 
           <>
             {state.notice === undefined ? null : <Text>{state.notice}</Text>}
             <QueuedIndicator queued={state.queued} />
+            <StatsLine line={statsLine} />
             <StatusBar
               sessionId={sessionId}
               provider={provider}
