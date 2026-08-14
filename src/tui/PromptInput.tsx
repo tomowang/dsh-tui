@@ -48,9 +48,10 @@ export interface TuiActions {
 export interface PromptInputProps {
   readonly status: AgentStatus
   readonly actions: TuiActions
+  readonly onCommandMatchesChange?: (count: number) => void
 }
 
-export function PromptInput({ status, actions }: PromptInputProps) {
+export function PromptInput({ status, actions, onCommandMatchesChange }: PromptInputProps) {
   const [value, setValue] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
 
@@ -79,9 +80,18 @@ export function PromptInput({ status, actions }: PromptInputProps) {
     }
   })
 
+  function handleValueChange(next: string): void {
+    setValue(next)
+    const nextQuery = next.trim()
+    const nextCommandMode = next.startsWith('/') && !/\s/.test(nextQuery)
+    const nextMatches = nextCommandMode ? matchSlashCommands(nextQuery) : []
+    onCommandMatchesChange?.(nextMatches.length)
+  }
+
   function handleSubmit(raw: string): void {
     setValue('')
     setSelectedIndex(0)
+    onCommandMatchesChange?.(0)
     const trimmed = raw.trim()
     if (trimmed === '') return
     const commandMatches = trimmed.startsWith('/') && !/\s/.test(trimmed) ? matchSlashCommands(trimmed) : []
@@ -106,7 +116,7 @@ export function PromptInput({ status, actions }: PromptInputProps) {
       )}
       <Box borderStyle="round" borderColor="white" paddingX={1}>
         <Text>{'› '}</Text>
-        <TextInput value={value} onChange={setValue} onSubmit={handleSubmit} />
+        <TextInput value={value} onChange={handleValueChange} onSubmit={handleSubmit} />
       </Box>
     </Box>
   )

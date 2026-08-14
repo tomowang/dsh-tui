@@ -6,8 +6,8 @@
  * @module @tomowang/dsh-tui/tui/App
  */
 
-import { useMemo, useSyncExternalStore } from 'react'
-import { Box, Static, Text, useStdout } from 'ink'
+import { useMemo, useState, useSyncExternalStore } from 'react'
+import { Box, Static, Text, useStdout, useWindowSize } from 'ink'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { TuiStore } from './store.js'
 import { Banner } from './Banner.js'
@@ -16,6 +16,8 @@ import { StatusBar } from './StatusBar.js'
 import { QueuedIndicator } from './QueuedIndicator.js'
 import { PromptInput, type TuiActions } from './PromptInput.js'
 import { ModelProfileOverlay } from './modelProfile/ModelProfileOverlay.js'
+import { buildBannerText } from './bannerText.js'
+import { formatEvent } from '../render.js'
 
 export type { TuiActions } from './PromptInput.js'
 
@@ -38,10 +40,19 @@ export interface AppProps {
   readonly columns: number
 }
 
-export function App({ store, actions, sessionId, provider, model, version, cwd, columns }: AppProps) {
+function countEventLines(event: SessionEvent, replay: boolean): number {
+  const formatted = formatEvent(event, { replay })
+  if (formatted === undefined || formatted === '') return 0
+  return formatted.split('\n').length
+}
+
+export function App({ store, actions, sessionId, provider, model, version, cwd, columns: initialColumns }: AppProps) {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot)
   const { stdout } = useStdout()
-  const rows = stdout.rows || 24
+  const { rows: windowRows, columns: windowColumns } = useWindowSize()
+  const rows = windowRows || stdout.rows || 24
+  const columns = windowColumns || initialColumns || stdout.columns || 80
+  const [commandMatchesCount, setCommandMatchesCount] = useState(0)
 
   // The banner is a fixed item 0; events only ever append after it, so
   // Static's index-based "already printed" bookkeeping stays correct even
@@ -54,8 +65,40 @@ export function App({ store, actions, sessionId, provider, model, version, cwd, 
     [state.events, state.replayThrough],
   )
 
+  const staticLines = useMemo(() => {
+    const bannerLines = buildBannerText({ version, provider, model, cwd }, columns).split('\n').length
+    const eventLines = state.events.reduce((total, event) => {
+      return total + countEventLines(event, event.seq <= state.replayThrough)
+    }, 0)
+    return bannerLines + eventLines
+  }, [version, provider, model, cwd, columns, state.events, state.replayThrough])
+
+  const dynamicLines = useMemo(() => {
+    if (state.overlay.kind === 'modelProfile') {
+      const mp = state.overlay.modelProfile
+      if (mp.view === 'form') {
+        const errorLine = mp.error !== undefined ? 1 : 0
+        const isNewLine = mp.draft?.isNew ? 1 : 0
+        return 8 + errorLine + isNewLine
+      }
+      const errorLine = mp.error !== undefined ? 1 : 0
+      const loadingLine = mp.busy && mp.providers === undefined ? 1 : 0
+      const listRows = mp.providers?.length ?? 1
+      return 2 + errorLine + loadingLine + listRows
+    }
+    const noticeLines = state.notice === undefined ? 0 : state.notice.split('\n').length
+    const queuedLines = state.queued.length
+    const statusBarLines = 1
+    const promptLines = 3 + commandMatchesCount
+    return noticeLines + queuedLines + statusBarLines + promptLines
+  }, [state.overlay, state.notice, state.queued.length, commandMatchesCount])
+
+  // Ink appends a trailing newline to interactive frames (output + '\n'),
+  // so we subtract 1 to ensure total rendered lines don't exceed terminal rows.
+  const spacerHeight = Math.max(0, rows - staticLines - dynamicLines - 1)
+
   return (
-    <Box flexDirection="column" height={rows}>
+    <Box flexDirection="column">
       <Static items={items}>
         {item =>
           item.kind === 'banner' ? (
@@ -65,10 +108,8 @@ export function App({ store, actions, sessionId, provider, model, version, cwd, 
           )
         }
       </Static>
-      {/* Static is position:absolute and contributes no height, so this spacer
-          is the only thing pushing the live region down to the last row. */}
-      <Box flexGrow={1} />
       <Box flexDirection="column">
+        {spacerHeight > 0 && <Box height={spacerHeight} />}
         {state.overlay.kind === 'modelProfile' ? (
           <ModelProfileOverlay modelProfile={state.overlay.modelProfile} actions={actions} />
         ) : (
@@ -82,7 +123,11 @@ export function App({ store, actions, sessionId, provider, model, version, cwd, 
               status={state.status}
               queuedCount={state.queued.length}
             />
-            <PromptInput status={state.status} actions={actions} />
+            <PromptInput
+              status={state.status}
+              actions={actions}
+              onCommandMatchesChange={setCommandMatchesCount}
+            />
           </>
         )}
       </Box>
