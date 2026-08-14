@@ -7,7 +7,7 @@
  */
 
 import { useMemo, useSyncExternalStore } from 'react'
-import { Box, Static, Text } from 'ink'
+import { Box, Static, Text, useStdout } from 'ink'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { TuiStore } from './store.js'
 import { Banner } from './Banner.js'
@@ -40,6 +40,8 @@ export interface AppProps {
 
 export function App({ store, actions, sessionId, provider, model, version, cwd, columns }: AppProps) {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot)
+  const { stdout } = useStdout()
+  const rows = stdout.rows || 24
 
   // The banner is a fixed item 0; events only ever append after it, so
   // Static's index-based "already printed" bookkeeping stays correct even
@@ -53,7 +55,7 @@ export function App({ store, actions, sessionId, provider, model, version, cwd, 
   )
 
   return (
-    <Box flexDirection="column">
+    <Box flexDirection="column" height={rows}>
       <Static items={items}>
         {item =>
           item.kind === 'banner' ? (
@@ -63,6 +65,9 @@ export function App({ store, actions, sessionId, provider, model, version, cwd, 
           )
         }
       </Static>
+      {/* Static is position:absolute and contributes no height, so this spacer
+          is the only thing pushing the live region down to the last row. */}
+      <Box flexGrow={1} />
       <Box flexDirection="column">
         {state.overlay.kind === 'modelProfile' ? (
           <ModelProfileOverlay modelProfile={state.overlay.modelProfile} actions={actions} />

@@ -79,7 +79,7 @@ export function PromptInput({ status, actions }: PromptInputProps) {
   }
 
   return (
-    <Box>
+    <Box borderStyle="round" borderColor="white" paddingX={1}>
       <Text>{'› '}</Text>
       <TextInput value={value} onChange={setValue} onSubmit={handleSubmit} />
     </Box>
