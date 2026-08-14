@@ -13,6 +13,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
+import { homedir } from 'node:os'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
@@ -29,6 +30,7 @@ import type { Instance } from 'ink'
 import { TuiStore } from './tui/store.js'
 import { mountTui } from './tui/mount.js'
 import type { TuiActions } from './tui/App.js'
+import { readPackageVersion } from './version.js'
 
 /** Stable Cordis plugin name. */
 export const name = 'tui'
@@ -65,6 +67,12 @@ function fail(io: TuiIo, error: unknown, instance: Instance | undefined): void {
   io.exit(1)
 }
 
+/** Replace a leading home directory with `~`, matching common shell prompts. */
+function abbreviateHome(cwd: string): string {
+  const home = homedir()
+  return cwd === home || cwd.startsWith(`${home}/`) ? `~${cwd.slice(home.length)}` : cwd
+}
+
 /**
  * Drive one interactive session: create or resume the Agent, replay its log,
  * follow live session events, and mount the Ink front end for input.
@@ -95,9 +103,6 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
     },
   })
   await agent.whenIdle()
-
-  io.write(`session ${String(agent.session.id)} · ${selection.provider}/${selection.model}\n`)
-  io.write('type a message; /status for a snapshot; /exit to quit\n\n')
 
   // Seed the store from persisted history, then follow the same log live; the
   // store's seq boundary keeps one rendering pass per event across replay and
@@ -163,12 +168,17 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
     },
   }
 
+  // Clear the screen before Ink takes over so the banner opens on a fresh page.
+  internals.stdout.write('\x1b[2J\x1b[3J\x1b[H')
+
   const instance = mountTui({
     store,
     actions,
     sessionId: String(agent.session.id),
     provider: selection.provider,
     model: selection.model,
+    version: readPackageVersion(),
+    cwd: abbreviateHome(process.cwd()),
     stdout: internals.stdout,
     stdin: process.stdin,
   })

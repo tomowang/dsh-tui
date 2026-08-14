@@ -17,6 +17,8 @@ export interface MountOptions {
   readonly sessionId: string
   readonly provider: string
   readonly model: string
+  readonly version: string
+  readonly cwd: string
   readonly stdout: NodeJS.WriteStream
   readonly stdin: NodeJS.ReadStream
 }
@@ -34,6 +36,10 @@ export function mountTui(options: MountOptions): Instance {
       sessionId={options.sessionId}
       provider={options.provider}
       model={options.model}
+      version={options.version}
+      cwd={options.cwd}
+      // `?? ` alone won't catch it: a size-less pty reports `0`, not `undefined`.
+      columns={options.stdout.columns || 80}
     />,
     {
       stdout: options.stdout,

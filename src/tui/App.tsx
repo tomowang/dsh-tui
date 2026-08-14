@@ -6,10 +6,11 @@
  * @module @tomowang/dsh-tui/tui/App
  */
 
-import { useSyncExternalStore } from 'react'
+import { useMemo, useSyncExternalStore } from 'react'
 import { Box, Static, Text } from 'ink'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { TuiStore } from './store.js'
+import { Banner } from './Banner.js'
 import { EventLine } from './EventLine.js'
 import { StatusBar } from './StatusBar.js'
 import { QueuedIndicator } from './QueuedIndicator.js'
@@ -17,22 +18,49 @@ import { PromptInput, type TuiActions } from './PromptInput.js'
 
 export type { TuiActions } from './PromptInput.js'
 
+// Ink only tracks one `<Static>` node per app (a single field on its root
+// node) — a second sibling `<Static>` silently overwrites the first instead
+// of coexisting. The banner therefore has to share the one Static's items
+// array with the session events rather than getting its own block.
+type StaticItem =
+  | { readonly kind: 'banner' }
+  | { readonly kind: 'event'; readonly event: SessionEvent; readonly replay: boolean }
+
 export interface AppProps {
   readonly store: TuiStore
   readonly actions: TuiActions
   readonly sessionId: string
   readonly provider: string
   readonly model: string
+  readonly version: string
+  readonly cwd: string
+  readonly columns: number
 }
 
-export function App({ store, actions, sessionId, provider, model }: AppProps) {
+export function App({ store, actions, sessionId, provider, model, version, cwd, columns }: AppProps) {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot)
+
+  // The banner is a fixed item 0; events only ever append after it, so
+  // Static's index-based "already printed" bookkeeping stays correct even
+  // though this array is rebuilt (with a fresh reference) on every render.
+  const items = useMemo<StaticItem[]>(
+    () => [
+      { kind: 'banner' },
+      ...state.events.map(event => ({ kind: 'event' as const, event, replay: event.seq <= state.replayThrough })),
+    ],
+    [state.events, state.replayThrough],
+  )
 
   return (
     <Box flexDirection="column">
-      {/* Static requires a mutable array type; it never mutates what it's given. */}
-      <Static items={state.events as SessionEvent[]}>
-        {event => <EventLine key={event.seq} event={event} replay={event.seq <= state.replayThrough} />}
+      <Static items={items}>
+        {item =>
+          item.kind === 'banner' ? (
+            <Banner key="banner" version={version} provider={provider} model={model} cwd={cwd} columns={columns} />
+          ) : (
+            <EventLine key={item.event.seq} event={item.event} replay={item.replay} />
+          )
+        }
       </Static>
       <Box flexDirection="column">
         {state.notice === undefined ? null : <Text>{state.notice}</Text>}
