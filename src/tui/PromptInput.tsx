@@ -192,6 +192,7 @@ type Action =
   | { type: 'newline' }
   | { type: 'newlineFromBackslash' }
   | { type: 'reset' }
+  | { type: 'completeCommand'; text: string }
 
 function bufferReducer(state: PromptState, action: Action): PromptState {
   switch (action.type) {
@@ -295,6 +296,8 @@ function bufferReducer(state: PromptState, action: Action): PromptState {
     }
     case 'reset':
       return initialState
+    case 'completeCommand':
+      return { ...state, value: action.text, cursor: action.text.length }
   }
 }
 
@@ -358,6 +361,13 @@ export function PromptInput({ status, actions, onCommandMatchesChange, onLinesCh
     // reports as `key.tab` with `key.shift` set — distinct from plain Tab.
     if (key.tab && key.shift) {
       actions.cyclePermission()
+      return
+    }
+    // Tab completes the input to the highlighted command's text (shell-style
+    // completion) without running it — Enter still confirms. Leaves the
+    // suggestion list open since the completed text still matches itself.
+    if (key.tab && isCommandMode && matches.length > 0) {
+      dispatch({ type: 'completeCommand', text: matches[selected].command })
       return
     }
     if (key.ctrl && input === 'c') {
