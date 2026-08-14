@@ -60,6 +60,9 @@ export function PromptInput({ status, actions, onCommandMatchesChange }: PromptI
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [armedKey, setArmedKey] = useState<'c' | 'd' | null>(null)
   const armTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const historyRef = useRef<string[]>([])
+  const [historyIndex, setHistoryIndex] = useState<number | null>(null)
+  const draftRef = useRef('')
 
   useEffect(() => {
     return () => {
@@ -117,6 +120,35 @@ export function PromptInput({ status, actions, onCommandMatchesChange }: PromptI
         setSelectedIndex(i => (i + 1) % matches.length)
         return
       }
+      return
+    }
+    if (key.upArrow) {
+      const history = historyRef.current
+      if (history.length === 0) return
+      if (historyIndex === null) {
+        draftRef.current = value
+        const nextIndex = history.length - 1
+        setHistoryIndex(nextIndex)
+        setValue(history[nextIndex])
+      } else if (historyIndex > 0) {
+        const nextIndex = historyIndex - 1
+        setHistoryIndex(nextIndex)
+        setValue(history[nextIndex])
+      }
+      return
+    }
+    if (key.downArrow) {
+      if (historyIndex === null) return
+      const history = historyRef.current
+      if (historyIndex < history.length - 1) {
+        const nextIndex = historyIndex + 1
+        setHistoryIndex(nextIndex)
+        setValue(history[nextIndex])
+      } else {
+        setHistoryIndex(null)
+        setValue(draftRef.current)
+      }
+      return
     }
   })
 
@@ -131,9 +163,11 @@ export function PromptInput({ status, actions, onCommandMatchesChange }: PromptI
   function handleSubmit(raw: string): void {
     setValue('')
     setSelectedIndex(0)
+    setHistoryIndex(null)
     onCommandMatchesChange?.(0)
     const trimmed = raw.trim()
     if (trimmed === '') return
+    if (historyRef.current.at(-1) !== trimmed) historyRef.current.push(trimmed)
     const commandMatches = trimmed.startsWith('/') && !/\s/.test(trimmed) ? matchSlashCommands(trimmed) : []
     if (commandMatches.length > 0) {
       const chosen = commandMatches[Math.min(selectedIndex, commandMatches.length - 1)]
