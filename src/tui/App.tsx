@@ -15,6 +15,7 @@ import { EventLine } from './EventLine.js'
 import { StatusBar } from './StatusBar.js'
 import { QueuedIndicator } from './QueuedIndicator.js'
 import { PromptInput, type TuiActions } from './PromptInput.js'
+import { ModelProfileOverlay } from './modelProfile/ModelProfileOverlay.js'
 
 export type { TuiActions } from './PromptInput.js'
 
@@ -63,16 +64,22 @@ export function App({ store, actions, sessionId, provider, model, version, cwd, 
         }
       </Static>
       <Box flexDirection="column">
-        {state.notice === undefined ? null : <Text>{state.notice}</Text>}
-        <QueuedIndicator queued={state.queued} />
-        <StatusBar
-          sessionId={sessionId}
-          provider={provider}
-          model={model}
-          status={state.status}
-          queuedCount={state.queued.length}
-        />
-        <PromptInput status={state.status} actions={actions} />
+        {state.overlay.kind === 'modelProfile' ? (
+          <ModelProfileOverlay modelProfile={state.overlay.modelProfile} actions={actions} />
+        ) : (
+          <>
+            {state.notice === undefined ? null : <Text>{state.notice}</Text>}
+            <QueuedIndicator queued={state.queued} />
+            <StatusBar
+              sessionId={sessionId}
+              provider={provider}
+              model={model}
+              status={state.status}
+              queuedCount={state.queued.length}
+            />
+            <PromptInput status={state.status} actions={actions} />
+          </>
+        )}
       </Box>
     </Box>
   )

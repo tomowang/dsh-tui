@@ -9,6 +9,29 @@
 
 import type { AgentStatus } from '@deepseek-ai/dsh-agent'
 import type { SessionEvent, UserMessage } from '@deepseek-ai/dsh-session'
+import type { DiscoveredModel, ProviderDraft, ProviderRow } from './modelProfile/types.js'
+
+/** Which pane of the `/model` overlay is showing. */
+export type ModelProfileView = 'list' | 'form'
+
+/** Overlay-owned state for the `/model` provider-profile screen. */
+export interface ModelProfileOverlayState {
+  readonly view: ModelProfileView
+  /** Joined provider directory; `undefined` until the first load settles. */
+  readonly providers: readonly ProviderRow[] | undefined
+  readonly selected: number
+  readonly draft: ProviderDraft | undefined
+  /** Bumped on every `editProvider`/`createProvider` so the form remounts with fresh local state. */
+  readonly formKey: number
+  readonly discovered: readonly DiscoveredModel[] | undefined
+  readonly busy: boolean
+  readonly error: string | undefined
+}
+
+/** Full-screen overlay replacing the live region's normal controls. */
+export type Overlay =
+  | { readonly kind: 'none' }
+  | { readonly kind: 'modelProfile'; readonly modelProfile: ModelProfileOverlayState }
 
 /** One immutable snapshot of everything the TUI renders. */
 export interface TuiState {
@@ -22,7 +45,11 @@ export interface TuiState {
   readonly queued: readonly UserMessage[]
   /** Transient one-line notice (e.g. `/status`), cleared on the next input. */
   readonly notice: string | undefined
+  /** Active full-screen overlay, if any, replacing the prompt/status live region. */
+  readonly overlay: Overlay
 }
+
+const CLOSED_OVERLAY: Overlay = { kind: 'none' }
 
 type Listener = () => void
 
@@ -41,6 +68,7 @@ export class TuiStore {
       status: 'idle',
       queued: [],
       notice: undefined,
+      overlay: CLOSED_OVERLAY,
     }
   }
 
@@ -69,6 +97,38 @@ export class TuiStore {
 
   setNotice(notice: string | undefined): void {
     this.set({ notice })
+  }
+
+  /** Open the `/model` overlay to a fresh, loading provider list. */
+  openModelProfile(): void {
+    this.set({
+      overlay: {
+        kind: 'modelProfile',
+        modelProfile: {
+          view: 'list',
+          providers: undefined,
+          selected: 0,
+          draft: undefined,
+          formKey: 0,
+          discovered: undefined,
+          busy: true,
+          error: undefined,
+        },
+      },
+    })
+  }
+
+  /** Close whichever overlay is open, restoring the normal prompt/status controls. */
+  closeOverlay(): void {
+    this.set({ overlay: CLOSED_OVERLAY })
+  }
+
+  /** Patch the open `/model` overlay's sub-state; a no-op once it's closed. */
+  updateModelProfile(patch: Partial<ModelProfileOverlayState>): void {
+    if (this.state.overlay.kind !== 'modelProfile') return
+    this.set({
+      overlay: { kind: 'modelProfile', modelProfile: { ...this.state.overlay.modelProfile, ...patch } },
+    })
   }
 
   private set(partial: Partial<TuiState>): void {

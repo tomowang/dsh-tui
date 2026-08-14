@@ -21,6 +21,9 @@ import type { ModelSelectionRef } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
+import { credentialRef } from '@deepseek-ai/dsh-credentials'
+import { settingsNamespace } from '@deepseek-ai/dsh-settings'
+import type { SettingsPathOp } from '@deepseek-ai/dsh-settings'
 // Empty type imports carry the loader Context merge for the mount await
 // and the cmdline Context merge for the appExit host value.
 import type {} from '@deepseek-ai/cordis-plugin-loader'
@@ -28,15 +31,37 @@ import type {} from '@deepseek-ai/dsh-cmdline'
 import type { Instance } from 'ink'
 
 import { TuiStore } from './tui/store.js'
+import type { ModelProfileOverlayState } from './tui/store.js'
 import { mountTui } from './tui/mount.js'
 import type { TuiActions } from './tui/App.js'
 import { readPackageVersion } from './version.js'
+import type { ProviderDraft, ProviderRow, StoredProviderProfile } from './tui/modelProfile/types.js'
 
 /** Stable Cordis plugin name. */
 export const name = 'tui'
 
 /** Core services required before the interactive loop can start. */
 export const inject = ['agentDefaultModel', 'agents', 'sessions']
+
+/** Settings namespace hand-declared/custom provider profiles are stored under. */
+const CUSTOM_PROVIDER_NAMESPACE = 'llm-pi-ai'
+
+/** Read a nested value out of an untyped resolved/raw settings section. */
+function getAtPath(value: unknown, path: readonly string[]): unknown {
+  let current = value
+  for (const key of path) {
+    if (current === null || typeof current !== 'object') return undefined
+    current = (current as Record<string, unknown>)[key]
+  }
+  return current
+}
+
+/** Derive a POSIX-identifier credential ref from a provider route, e.g. `my-proxy` -> `MY_PROXY_API_KEY`. */
+function deriveApiKeyRef(route: string): string {
+  const upper = route.toUpperCase().replace(/[^A-Z0-9]+/g, '_')
+  const identifier = /^[A-Z_]/.test(upper) ? upper : `P_${upper}`
+  return `${identifier}_API_KEY`
+}
 
 /** Plugin config: startup values resolved from this app's provider service. */
 export interface Config {
@@ -90,6 +115,12 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
   const sessions = ctx.get('sessions')
   // Early process shutdown can dispose the tree while settlement is pending.
   if (agents === undefined || defaultModel === undefined || sessions === undefined) return
+  // Not every profile mounts these — the `/model` overlay degrades to an error
+  // notice instead of the whole TUI refusing to start, so they stay outside
+  // `inject` and are re-checked at the point of use.
+  const settings = ctx.get('settings')
+  const credentials = ctx.get('credentials')
+  const llm = ctx.get('llm')
 
   const selection = defaultModel.currentSelection()
   const sessionId = SessionId(config.resume ?? `session-${randomUUID()}`)
@@ -146,6 +177,131 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
     io.exit(0)
   }
 
+  /** Guard for the three optional model-profile services, together or not at all. */
+  function requireModelProfileServices():
+    | { settings: NonNullable<typeof settings>; credentials: NonNullable<typeof credentials>; llm: NonNullable<typeof llm> }
+    | undefined {
+    if (settings === undefined || credentials === undefined || llm === undefined) return undefined
+    return { settings, credentials, llm }
+  }
+
+  /** The open `/model` overlay's sub-state, or `undefined` while it's closed. */
+  function currentModelProfile(): ModelProfileOverlayState | undefined {
+    const overlay = store.getSnapshot().overlay
+    return overlay.kind === 'modelProfile' ? overlay.modelProfile : undefined
+  }
+
+  /** Re-join `ctx.llm`'s provider directory with `ctx.settings`/`ctx.credentials` and refresh the list. */
+  async function loadProviders(): Promise<void> {
+    const services = requireModelProfileServices()
+    if (services === undefined) {
+      store.updateModelProfile({
+        providers: [],
+        busy: false,
+        error: 'Model provider settings are not available in this profile.',
+      })
+      return
+    }
+    const { settings: settingsSvc, credentials: credentialsSvc, llm: llmSvc } = services
+    const configurable = llmSvc.listConfigurableProviders()
+    const live = new Set(llmSvc.listProviders().map(provider => provider.id))
+    const descriptors = settingsSvc.describe({ redactSecrets: true })
+    const byNs = new Map<string, (typeof descriptors)[number]>(descriptors.map(descriptor => [descriptor.ns, descriptor]))
+    const rows: ProviderRow[] = []
+    for (const entry of configurable) {
+      const descriptor = byNs.get(entry.settingsNs)
+      const value =
+        descriptor === undefined
+          ? undefined
+          : (getAtPath(descriptor.value, entry.settingsPath) as StoredProviderProfile | undefined)
+      const userValue = descriptor === undefined ? undefined : getAtPath(descriptor.user, entry.settingsPath)
+      const apiKeyRef = value?.apiKeyEnv ?? deriveApiKeyRef(entry.provider)
+      const info = await credentialsSvc.describe(credentialRef(apiKeyRef))
+      rows.push({
+        route: entry.provider,
+        displayName: value?.displayName ?? entry.displayName,
+        settingsNs: entry.settingsNs,
+        settingsPath: entry.settingsPath,
+        configured: userValue !== undefined,
+        live: live.has(entry.provider),
+        api: value?.api,
+        baseURL: value?.baseURL,
+        apiKeyRef,
+        apiKeyConfigured: info.configured,
+        models: value?.models ?? [],
+        revision: descriptor?.revision,
+      })
+    }
+    const previousSelected = currentModelProfile()?.selected ?? 0
+    store.updateModelProfile({
+      providers: rows,
+      busy: false,
+      error: undefined,
+      selected: Math.min(previousSelected, Math.max(0, rows.length - 1)),
+    })
+  }
+
+  /** Write a draft's fields as path ops under its (or a new custom route's) settings path, then its API key. */
+  async function persistProvider(draft: ProviderDraft): Promise<void> {
+    const services = requireModelProfileServices()
+    if (services === undefined) return
+    if (draft.isNew && draft.route.trim() === '') {
+      store.updateModelProfile({ error: 'Route is required.' })
+      return
+    }
+    store.updateModelProfile({ busy: true, error: undefined })
+    try {
+      const path = draft.isNew ? ['providers', draft.route.trim()] : [...draft.settingsPath]
+      const ns = settingsNamespace(draft.isNew ? CUSTOM_PROVIDER_NAMESPACE : draft.settingsNs)
+      const apiKeyRef = draft.apiKeyRef === '' ? deriveApiKeyRef(draft.route) : draft.apiKeyRef
+      const ops: SettingsPathOp[] = [{ op: 'set', path: [...path, 'displayName'], value: draft.displayName }]
+      if (draft.api === '') ops.push({ op: 'unset', path: [...path, 'api'] })
+      else ops.push({ op: 'set', path: [...path, 'api'], value: draft.api })
+      if (draft.baseURL === '') ops.push({ op: 'unset', path: [...path, 'baseURL'] })
+      else ops.push({ op: 'set', path: [...path, 'baseURL'], value: draft.baseURL })
+      ops.push({ op: 'set', path: [...path, 'apiKeyEnv'], value: apiKeyRef })
+      ops.push({ op: 'set', path: [...path, 'models'], value: draft.models })
+      await services.settings.mutate(ns, ops, draft.revision)
+      if (draft.apiKeyDraft !== '') await services.credentials.set(credentialRef(apiKeyRef), draft.apiKeyDraft)
+      store.updateModelProfile({ view: 'list', draft: undefined })
+      await loadProviders()
+    } catch (error) {
+      store.updateModelProfile({ busy: false, error: error instanceof Error ? error.message : String(error) })
+    }
+  }
+
+  /** Unset a provider's credential, then its settings section, and reload the list. */
+  async function removeProvider(row: ProviderRow): Promise<void> {
+    const services = requireModelProfileServices()
+    if (services === undefined) return
+    store.updateModelProfile({ busy: true, error: undefined })
+    try {
+      await services.credentials.unset(credentialRef(row.apiKeyRef))
+      await services.settings.mutate(settingsNamespace(row.settingsNs), [{ op: 'unset', path: row.settingsPath }], row.revision)
+      await loadProviders()
+    } catch (error) {
+      store.updateModelProfile({ busy: false, error: error instanceof Error ? error.message : String(error) })
+    }
+  }
+
+  /** Probe a draft's endpoint (or its adapter's own catalog knowledge) for available models. */
+  async function probeModels(draft: ProviderDraft): Promise<void> {
+    const services = requireModelProfileServices()
+    if (services === undefined) return
+    store.updateModelProfile({ busy: true, error: undefined })
+    try {
+      const results = await services.llm.discoverModels(draft.isNew ? CUSTOM_PROVIDER_NAMESPACE : draft.settingsNs, {
+        provider: draft.isNew ? undefined : draft.route,
+        baseURL: draft.baseURL === '' ? undefined : draft.baseURL,
+        api: draft.api === '' ? undefined : draft.api,
+        apiKey: draft.apiKeyDraft === '' ? undefined : draft.apiKeyDraft,
+      })
+      store.updateModelProfile({ discovered: results, busy: false })
+    } catch (error) {
+      store.updateModelProfile({ busy: false, error: error instanceof Error ? error.message : String(error) })
+    }
+  }
+
   const actions: TuiActions = {
     send(text) {
       store.setNotice(undefined)
@@ -165,6 +321,75 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
     },
     status() {
       store.setNotice(`session ${String(agent.session.id)} · ${agent.status} · ${agent.session.events.length} logged events`)
+    },
+
+    openModelProfile() {
+      store.openModelProfile()
+      void loadProviders()
+    },
+    closeModelProfile() {
+      store.closeOverlay()
+    },
+    backToProviderList() {
+      store.updateModelProfile({ view: 'list', draft: undefined, discovered: undefined, error: undefined })
+    },
+    selectProvider(index) {
+      store.updateModelProfile({ selected: index })
+    },
+    createProvider() {
+      const formKey = (currentModelProfile()?.formKey ?? 0) + 1
+      const draft: ProviderDraft = {
+        route: '',
+        isNew: true,
+        settingsNs: CUSTOM_PROVIDER_NAMESPACE,
+        settingsPath: [],
+        displayName: '',
+        api: '',
+        baseURL: '',
+        apiKeyRef: '',
+        apiKeyConfigured: false,
+        apiKeyDraft: '',
+        models: [],
+        revision: undefined,
+      }
+      store.updateModelProfile({ view: 'form', draft, discovered: undefined, error: undefined, formKey })
+    },
+    editProvider(route) {
+      const row = currentModelProfile()?.providers?.find(candidate => candidate.route === route)
+      if (row === undefined) return
+      const formKey = (currentModelProfile()?.formKey ?? 0) + 1
+      const draft: ProviderDraft = {
+        route: row.route,
+        isNew: false,
+        settingsNs: row.settingsNs,
+        settingsPath: row.settingsPath,
+        displayName: row.displayName,
+        api: row.api ?? '',
+        baseURL: row.baseURL ?? '',
+        apiKeyRef: row.apiKeyRef,
+        apiKeyConfigured: row.apiKeyConfigured,
+        apiKeyDraft: '',
+        models: row.models,
+        revision: row.revision,
+      }
+      store.updateModelProfile({ view: 'form', draft, discovered: undefined, error: undefined, formKey })
+    },
+    saveProvider(draft) {
+      void persistProvider(draft)
+    },
+    deleteProvider(row) {
+      void removeProvider(row)
+    },
+    discoverModelsForDraft(draft) {
+      void probeModels(draft)
+    },
+    setActiveModel(provider, model) {
+      void defaultModel
+        .saveSelection({ provider, model })
+        .then(() => store.setNotice(`default model set to ${provider}/${model}`))
+        .catch((error: unknown) => {
+          store.setNotice(`failed to set default model: ${error instanceof Error ? error.message : String(error)}`)
+        })
     },
   }
 

@@ -10,6 +10,7 @@ import { useState } from 'react'
 import { Box, Text, useInput } from 'ink'
 import TextInput from 'ink-text-input'
 import type { AgentStatus } from '@deepseek-ai/dsh-agent'
+import type { ProviderDraft, ProviderRow } from './modelProfile/types.js'
 
 export interface TuiActions {
   /** Route free text to steering (running) or follow-up (idle). */
@@ -20,6 +21,27 @@ export interface TuiActions {
   shutdown(): void
   /** Publish a transient `/status` snapshot as the live-region notice. */
   status(): void
+
+  /** Open the `/model` provider-profile overlay and start loading providers. */
+  openModelProfile(): void
+  /** Close the `/model` overlay, discarding any in-progress edit. */
+  closeModelProfile(): void
+  /** Return from the add/edit form to the provider list without saving. */
+  backToProviderList(): void
+  /** Move the provider list's selection cursor. */
+  selectProvider(index: number): void
+  /** Open a blank draft for a new custom provider. */
+  createProvider(): void
+  /** Open an existing provider's stored profile for editing. */
+  editProvider(route: string): void
+  /** Persist a draft via `ctx.settings`/`ctx.credentials`, then reload the list. */
+  saveProvider(draft: ProviderDraft): void
+  /** Remove a provider's settings section and credential. */
+  deleteProvider(row: ProviderRow): void
+  /** Probe a draft's endpoint via `ctx.llm.discoverModels`. */
+  discoverModelsForDraft(draft: ProviderDraft): void
+  /** Save `{provider, model}` as the Agent's default model selection. */
+  setActiveModel(provider: string, model: string): void
 }
 
 export interface PromptInputProps {
@@ -47,6 +69,10 @@ export function PromptInput({ status, actions }: PromptInputProps) {
     }
     if (text === '/status') {
       actions.status()
+      return
+    }
+    if (text === '/model') {
+      actions.openModelProfile()
       return
     }
     actions.send(text)
