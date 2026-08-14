@@ -24,6 +24,8 @@ export interface TuiActions {
   shutdown(): void
   /** Publish a transient `/status` snapshot as the live-region notice. */
   status(): void
+  /** Flush the current session, then start a brand-new one in a fresh screen. */
+  clear(): void
 
   /** Open the `/model` provider-profile overlay and start loading providers. */
   openModelProfile(): void
@@ -51,16 +53,20 @@ export interface PromptInputProps {
   readonly status: AgentStatus
   readonly actions: TuiActions
   readonly onCommandMatchesChange?: (count: number) => void
+  /**
+   * Submitted-line history for up/down-arrow recall. Owned by the caller
+   * (outside the Ink tree) so it survives `/clear` remounting this component.
+   */
+  readonly history: string[]
 }
 
 const EXIT_ARM_TIMEOUT_MS = 2000
 
-export function PromptInput({ status, actions, onCommandMatchesChange }: PromptInputProps) {
+export function PromptInput({ status, actions, onCommandMatchesChange, history }: PromptInputProps) {
   const [value, setValue] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [armedKey, setArmedKey] = useState<'c' | 'd' | null>(null)
   const armTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const historyRef = useRef<string[]>([])
   const [historyIndex, setHistoryIndex] = useState<number | null>(null)
   const draftRef = useRef('')
 
@@ -111,7 +117,12 @@ export function PromptInput({ status, actions, onCommandMatchesChange }: PromptI
       armOrConfirmExit('d')
       return
     }
-    if (isCommandMode && matches.length > 0) {
+    // A recalled history line can itself look like a slash command (recalling
+    // "/clear" is the common case) — once recall is under way, keep up/down
+    // driving history instead of letting that coincidence hand control to the
+    // command-palette selector below and strand the reader on one entry.
+    const navigatingHistory = historyIndex !== null
+    if (!navigatingHistory && isCommandMode && matches.length > 0) {
       if (key.upArrow) {
         setSelectedIndex(i => (i - 1 + matches.length) % matches.length)
         return
@@ -123,7 +134,6 @@ export function PromptInput({ status, actions, onCommandMatchesChange }: PromptI
       return
     }
     if (key.upArrow) {
-      const history = historyRef.current
       if (history.length === 0) return
       if (historyIndex === null) {
         draftRef.current = value
@@ -139,7 +149,6 @@ export function PromptInput({ status, actions, onCommandMatchesChange }: PromptI
     }
     if (key.downArrow) {
       if (historyIndex === null) return
-      const history = historyRef.current
       if (historyIndex < history.length - 1) {
         const nextIndex = historyIndex + 1
         setHistoryIndex(nextIndex)
@@ -167,7 +176,7 @@ export function PromptInput({ status, actions, onCommandMatchesChange }: PromptI
     onCommandMatchesChange?.(0)
     const trimmed = raw.trim()
     if (trimmed === '') return
-    if (historyRef.current.at(-1) !== trimmed) historyRef.current.push(trimmed)
+    if (history.at(-1) !== trimmed) history.push(trimmed)
     const commandMatches = trimmed.startsWith('/') && !/\s/.test(trimmed) ? matchSlashCommands(trimmed) : []
     if (commandMatches.length > 0) {
       const chosen = commandMatches[Math.min(selectedIndex, commandMatches.length - 1)]

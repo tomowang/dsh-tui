@@ -21,6 +21,8 @@ export interface MountOptions {
   readonly cwd: string
   readonly stdout: NodeJS.WriteStream
   readonly stdin: NodeJS.ReadStream
+  /** Submitted-line history for the prompt's up/down-arrow recall; owned outside the Ink tree so `/clear` can preserve it. */
+  readonly promptHistory: string[]
 }
 
 /**
@@ -40,6 +42,7 @@ export function mountTui(options: MountOptions): Instance {
       cwd={options.cwd}
       // `?? ` alone won't catch it: a size-less pty reports `0`, not `undefined`.
       columns={options.stdout.columns || 80}
+      promptHistory={options.promptHistory}
     />,
     {
       stdout: options.stdout,

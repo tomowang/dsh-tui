@@ -38,6 +38,8 @@ export interface AppProps {
   readonly version: string
   readonly cwd: string
   readonly columns: number
+  /** Submitted-line history for the prompt's up/down-arrow recall; owned outside the Ink tree so `/clear` can preserve it. */
+  readonly promptHistory: string[]
 }
 
 function countEventLines(event: SessionEvent, replay: boolean): number {
@@ -46,7 +48,7 @@ function countEventLines(event: SessionEvent, replay: boolean): number {
   return formatted.split('\n').length
 }
 
-export function App({ store, actions, sessionId, provider, model, version, cwd, columns: initialColumns }: AppProps) {
+export function App({ store, actions, sessionId, provider, model, version, cwd, columns: initialColumns, promptHistory }: AppProps) {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot)
   const { stdout } = useStdout()
   const { rows: windowRows, columns: windowColumns } = useWindowSize()
@@ -127,6 +129,7 @@ export function App({ store, actions, sessionId, provider, model, version, cwd, 
               status={state.status}
               actions={actions}
               onCommandMatchesChange={setCommandMatchesCount}
+              history={promptHistory}
             />
           </>
         )}

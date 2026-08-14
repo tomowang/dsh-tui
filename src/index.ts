@@ -17,7 +17,7 @@ import { homedir } from 'node:os'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
-import type { ModelSelectionRef } from '@deepseek-ai/dsh-agent'
+import type { Agent, ModelSelectionRef } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
@@ -110,72 +110,21 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
   // Loader siblings mount concurrently. Await the complete application before
   // creating an Agent so its scoped tools and adapters are not half-composed.
   await ctx.get('loader')?.await()
-  const agents = ctx.get('agents')
-  const defaultModel = ctx.get('agentDefaultModel')
+  const agentsMaybe = ctx.get('agents')
+  const defaultModelMaybe = ctx.get('agentDefaultModel')
   const sessions = ctx.get('sessions')
   // Early process shutdown can dispose the tree while settlement is pending.
-  if (agents === undefined || defaultModel === undefined || sessions === undefined) return
+  if (agentsMaybe === undefined || defaultModelMaybe === undefined || sessions === undefined) return
+  // Rebound so nested closures (attachSession, defined below) see the
+  // narrowed non-undefined type — TS doesn't carry flow narrowing into them.
+  const agents = agentsMaybe
+  const defaultModel = defaultModelMaybe
   // Not every profile mounts these — the `/model` overlay degrades to an error
   // notice instead of the whole TUI refusing to start, so they stay outside
   // `inject` and are re-checked at the point of use.
   const settings = ctx.get('settings')
   const credentials = ctx.get('credentials')
   const llm = ctx.get('llm')
-
-  const selection = defaultModel.currentSelection()
-  const sessionId = SessionId(config.resume ?? `session-${randomUUID()}`)
-  const { agent } = await agents.create({
-    sessionId,
-    meta: { cwd: process.cwd() },
-    agentOptions: { provider: selection.provider, model: selection.model },
-    setup: (agentCtx) => {
-      const selected: ModelSelectionRef = { current: selection, assembled: undefined }
-      installModelSelection(agentCtx, selected)
-    },
-  })
-  await agent.whenIdle()
-
-  // Seed the store from persisted history, then follow the same log live; the
-  // store's seq boundary keeps one rendering pass per event across replay and
-  // live phases, and `--resume` starts with any pending inbox already shown.
-  const store = new TuiStore({ events: agent.session.events })
-  store.setStatus(agent.status)
-  store.setQueued([...agent.inbox.nextStep, ...agent.inbox.nextTurn])
-
-  ctx.on('session/event', (session, event) => {
-    if (session !== agent.session) return
-    store.appendEvent(event)
-  })
-  ctx.on('agent/status', (payload) => {
-    if (payload.agent !== agent) return
-    store.setStatus(payload.status)
-  })
-  const resnapshotQueue = (): void => {
-    store.setQueued([...agent.inbox.nextStep, ...agent.inbox.nextTurn])
-  }
-  ctx.on('agent/inbox/inserted', (payload) => {
-    if (payload.agent !== agent) return
-    resnapshotQueue()
-  })
-  ctx.on('agent/inbox/claimed', (payload) => {
-    if (payload.agent !== agent) return
-    resnapshotQueue()
-  })
-  ctx.on('agent/inbox/discarded', (payload) => {
-    if (payload.agent !== agent) return
-    resnapshotQueue()
-  })
-
-  let closing = false
-  async function shutdown(): Promise<void> {
-    if (closing) return
-    closing = true
-    agent.cancel({ kind: 'user' })
-    await agent.whenIdle()
-    await sessions?.flush(agent.session)
-    instance.unmount()
-    io.exit(0)
-  }
 
   /** Guard for the three optional model-profile services, together or not at all. */
   function requireModelProfileServices():
@@ -187,7 +136,7 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
 
   /** The open `/model` overlay's sub-state, or `undefined` while it's closed. */
   function currentModelProfile(): ModelProfileOverlayState | undefined {
-    const overlay = store.getSnapshot().overlay
+    const overlay = current.store.getSnapshot().overlay
     return overlay.kind === 'modelProfile' ? overlay.modelProfile : undefined
   }
 
@@ -195,7 +144,7 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
   async function loadProviders(): Promise<void> {
     const services = requireModelProfileServices()
     if (services === undefined) {
-      store.updateModelProfile({
+      current.store.updateModelProfile({
         providers: [],
         busy: false,
         error: 'Model provider settings are not available in this profile.',
@@ -233,7 +182,7 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
       })
     }
     const previousSelected = currentModelProfile()?.selected ?? 0
-    store.updateModelProfile({
+    current.store.updateModelProfile({
       providers: rows,
       busy: false,
       error: undefined,
@@ -246,10 +195,10 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
     const services = requireModelProfileServices()
     if (services === undefined) return
     if (draft.isNew && draft.route.trim() === '') {
-      store.updateModelProfile({ error: 'Route is required.' })
+      current.store.updateModelProfile({ error: 'Route is required.' })
       return
     }
-    store.updateModelProfile({ busy: true, error: undefined })
+    current.store.updateModelProfile({ busy: true, error: undefined })
     try {
       const path = draft.isNew ? ['providers', draft.route.trim()] : [...draft.settingsPath]
       const ns = settingsNamespace(draft.isNew ? CUSTOM_PROVIDER_NAMESPACE : draft.settingsNs)
@@ -263,10 +212,10 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
       ops.push({ op: 'set', path: [...path, 'models'], value: draft.models })
       await services.settings.mutate(ns, ops, draft.revision)
       if (draft.apiKeyDraft !== '') await services.credentials.set(credentialRef(apiKeyRef), draft.apiKeyDraft)
-      store.updateModelProfile({ view: 'list', draft: undefined })
+      current.store.updateModelProfile({ view: 'list', draft: undefined })
       await loadProviders()
     } catch (error) {
-      store.updateModelProfile({ busy: false, error: error instanceof Error ? error.message : String(error) })
+      current.store.updateModelProfile({ busy: false, error: error instanceof Error ? error.message : String(error) })
     }
   }
 
@@ -274,13 +223,13 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
   async function removeProvider(row: ProviderRow): Promise<void> {
     const services = requireModelProfileServices()
     if (services === undefined) return
-    store.updateModelProfile({ busy: true, error: undefined })
+    current.store.updateModelProfile({ busy: true, error: undefined })
     try {
       await services.credentials.unset(credentialRef(row.apiKeyRef))
       await services.settings.mutate(settingsNamespace(row.settingsNs), [{ op: 'unset', path: row.settingsPath }], row.revision)
       await loadProviders()
     } catch (error) {
-      store.updateModelProfile({ busy: false, error: error instanceof Error ? error.message : String(error) })
+      current.store.updateModelProfile({ busy: false, error: error instanceof Error ? error.message : String(error) })
     }
   }
 
@@ -288,7 +237,7 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
   async function probeModels(draft: ProviderDraft): Promise<void> {
     const services = requireModelProfileServices()
     if (services === undefined) return
-    store.updateModelProfile({ busy: true, error: undefined })
+    current.store.updateModelProfile({ busy: true, error: undefined })
     try {
       const results = await services.llm.discoverModels(draft.isNew ? CUSTOM_PROVIDER_NAMESPACE : draft.settingsNs, {
         provider: draft.isNew ? undefined : draft.route,
@@ -296,120 +245,225 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
         api: draft.api === '' ? undefined : draft.api,
         apiKey: draft.apiKeyDraft === '' ? undefined : draft.apiKeyDraft,
       })
-      store.updateModelProfile({ discovered: results, busy: false })
+      current.store.updateModelProfile({ discovered: results, busy: false })
     } catch (error) {
-      store.updateModelProfile({ busy: false, error: error instanceof Error ? error.message : String(error) })
+      current.store.updateModelProfile({ busy: false, error: error instanceof Error ? error.message : String(error) })
     }
   }
 
-  const actions: TuiActions = {
-    send(text) {
-      store.setNotice(undefined)
-      const message = createUserMessage({
-        content: [{ type: 'text', text }],
-        source: { kind: 'user' },
-      })
-      // An idle driver opens a turn from follow-up; a running one takes steering.
-      if (agent.status === 'running') agent.steer(message)
-      else agent.followup(message)
-    },
-    cancel() {
-      agent.cancel({ kind: 'user' })
-    },
-    shutdown() {
-      void shutdown()
-    },
-    status() {
-      store.setNotice(`session ${String(agent.session.id)} · ${agent.status} · ${agent.session.events.length} logged events`)
-    },
-
-    openModelProfile() {
-      store.openModelProfile()
-      void loadProviders()
-    },
-    closeModelProfile() {
-      store.closeOverlay()
-    },
-    backToProviderList() {
-      store.updateModelProfile({ view: 'list', draft: undefined, discovered: undefined, error: undefined })
-    },
-    selectProvider(index) {
-      store.updateModelProfile({ selected: index })
-    },
-    createProvider() {
-      const formKey = (currentModelProfile()?.formKey ?? 0) + 1
-      const draft: ProviderDraft = {
-        route: '',
-        isNew: true,
-        settingsNs: CUSTOM_PROVIDER_NAMESPACE,
-        settingsPath: [],
-        displayName: '',
-        api: '',
-        baseURL: '',
-        apiKeyRef: '',
-        apiKeyConfigured: false,
-        apiKeyDraft: '',
-        models: [],
-        revision: undefined,
-      }
-      store.updateModelProfile({ view: 'form', draft, discovered: undefined, error: undefined, formKey })
-    },
-    editProvider(route) {
-      const row = currentModelProfile()?.providers?.find(candidate => candidate.route === route)
-      if (row === undefined) return
-      const formKey = (currentModelProfile()?.formKey ?? 0) + 1
-      const draft: ProviderDraft = {
-        route: row.route,
-        isNew: false,
-        settingsNs: row.settingsNs,
-        settingsPath: row.settingsPath,
-        displayName: row.displayName,
-        api: row.api ?? '',
-        baseURL: row.baseURL ?? '',
-        apiKeyRef: row.apiKeyRef,
-        apiKeyConfigured: row.apiKeyConfigured,
-        apiKeyDraft: '',
-        models: row.models,
-        revision: row.revision,
-      }
-      store.updateModelProfile({ view: 'form', draft, discovered: undefined, error: undefined, formKey })
-    },
-    saveProvider(draft) {
-      void persistProvider(draft)
-    },
-    deleteProvider(row) {
-      void removeProvider(row)
-    },
-    discoverModelsForDraft(draft) {
-      void probeModels(draft)
-    },
-    setActiveModel(provider, model) {
-      void defaultModel
-        .saveSelection({ provider, model })
-        .then(() => store.setNotice(`default model set to ${provider}/${model}`))
-        .catch((error: unknown) => {
-          store.setNotice(`failed to set default model: ${error instanceof Error ? error.message : String(error)}`)
-        })
-    },
+  /** One live agent/session/UI wiring; replaced wholesale by `clearSession()`. */
+  interface CurrentSession {
+    readonly agent: Agent
+    readonly store: TuiStore
+    readonly instance: Instance
+    /** From `AgentHandle.dispose`: stops the loop and drops it from the live session store (not disk). */
+    readonly disposeAgent: () => Promise<void>
+    readonly unsubscribers: readonly (() => boolean)[]
+    closing: boolean
   }
 
-  // Clear the screen before Ink takes over so the banner opens on a fresh page.
-  internals.stdout.write('\x1b[2J\x1b[3J\x1b[H')
+  // Owned here (outside the Ink tree) rather than inside PromptInput so `/clear`'s
+  // remount doesn't lose the reader's up/down-arrow recall.
+  const promptHistory: string[] = []
 
-  const instance = mountTui({
-    store,
-    actions,
-    sessionId: String(agent.session.id),
-    provider: selection.provider,
-    model: selection.model,
-    version: readPackageVersion(),
-    cwd: abbreviateHome(process.cwd()),
-    stdout: internals.stdout,
-    stdin: process.stdin,
-  })
-  mounted.instance = instance
+  /** Create (or resume) one Agent, wire its listeners to a fresh store, and mount a fresh Ink tree. */
+  async function attachSession(resumeId: string | undefined): Promise<CurrentSession> {
+    const selection = defaultModel.currentSelection()
+    const sessionId = SessionId(resumeId ?? `session-${randomUUID()}`)
+    const { agent, dispose } = await agents.create({
+      sessionId,
+      meta: { cwd: process.cwd() },
+      agentOptions: { provider: selection.provider, model: selection.model },
+      setup: (agentCtx) => {
+        const selected: ModelSelectionRef = { current: selection, assembled: undefined }
+        installModelSelection(agentCtx, selected)
+      },
+    })
+    await agent.whenIdle()
+
+    // Seed the store from persisted history, then follow the same log live; the
+    // store's seq boundary keeps one rendering pass per event across replay and
+    // live phases, and `--resume` starts with any pending inbox already shown.
+    const store = new TuiStore({ events: agent.session.events })
+    store.setStatus(agent.status)
+    store.setQueued([...agent.inbox.nextStep, ...agent.inbox.nextTurn])
+
+    const resnapshotQueue = (): void => {
+      store.setQueued([...agent.inbox.nextStep, ...agent.inbox.nextTurn])
+    }
+    const unsubscribers = [
+      ctx.on('session/event', (session, event) => {
+        if (session !== agent.session) return
+        store.appendEvent(event)
+      }),
+      ctx.on('agent/status', (payload) => {
+        if (payload.agent !== agent) return
+        store.setStatus(payload.status)
+      }),
+      ctx.on('agent/inbox/inserted', (payload) => {
+        if (payload.agent !== agent) return
+        resnapshotQueue()
+      }),
+      ctx.on('agent/inbox/claimed', (payload) => {
+        if (payload.agent !== agent) return
+        resnapshotQueue()
+      }),
+      ctx.on('agent/inbox/discarded', (payload) => {
+        if (payload.agent !== agent) return
+        resnapshotQueue()
+      }),
+    ]
+
+    const actions: TuiActions = {
+      send(text) {
+        store.setNotice(undefined)
+        const message = createUserMessage({
+          content: [{ type: 'text', text }],
+          source: { kind: 'user' },
+        })
+        // An idle driver opens a turn from follow-up; a running one takes steering.
+        if (agent.status === 'running') agent.steer(message)
+        else agent.followup(message)
+      },
+      cancel() {
+        agent.cancel({ kind: 'user' })
+      },
+      shutdown() {
+        void shutdown()
+      },
+      status() {
+        store.setNotice(`session ${String(agent.session.id)} · ${agent.status} · ${agent.session.events.length} logged events`)
+      },
+      clear() {
+        void clearSession()
+      },
+
+      openModelProfile() {
+        store.openModelProfile()
+        void loadProviders()
+      },
+      closeModelProfile() {
+        store.closeOverlay()
+      },
+      backToProviderList() {
+        store.updateModelProfile({ view: 'list', draft: undefined, discovered: undefined, error: undefined })
+      },
+      selectProvider(index) {
+        store.updateModelProfile({ selected: index })
+      },
+      createProvider() {
+        const formKey = (currentModelProfile()?.formKey ?? 0) + 1
+        const draft: ProviderDraft = {
+          route: '',
+          isNew: true,
+          settingsNs: CUSTOM_PROVIDER_NAMESPACE,
+          settingsPath: [],
+          displayName: '',
+          api: '',
+          baseURL: '',
+          apiKeyRef: '',
+          apiKeyConfigured: false,
+          apiKeyDraft: '',
+          models: [],
+          revision: undefined,
+        }
+        store.updateModelProfile({ view: 'form', draft, discovered: undefined, error: undefined, formKey })
+      },
+      editProvider(route) {
+        const row = currentModelProfile()?.providers?.find(candidate => candidate.route === route)
+        if (row === undefined) return
+        const formKey = (currentModelProfile()?.formKey ?? 0) + 1
+        const draft: ProviderDraft = {
+          route: row.route,
+          isNew: false,
+          settingsNs: row.settingsNs,
+          settingsPath: row.settingsPath,
+          displayName: row.displayName,
+          api: row.api ?? '',
+          baseURL: row.baseURL ?? '',
+          apiKeyRef: row.apiKeyRef,
+          apiKeyConfigured: row.apiKeyConfigured,
+          apiKeyDraft: '',
+          models: row.models,
+          revision: row.revision,
+        }
+        store.updateModelProfile({ view: 'form', draft, discovered: undefined, error: undefined, formKey })
+      },
+      saveProvider(draft) {
+        void persistProvider(draft)
+      },
+      deleteProvider(row) {
+        void removeProvider(row)
+      },
+      discoverModelsForDraft(draft) {
+        void probeModels(draft)
+      },
+      setActiveModel(provider, model) {
+        void defaultModel
+          .saveSelection({ provider, model })
+          .then(() => store.setNotice(`default model set to ${provider}/${model}`))
+          .catch((error: unknown) => {
+            store.setNotice(`failed to set default model: ${error instanceof Error ? error.message : String(error)}`)
+          })
+      },
+    }
+
+    // Clear the screen before Ink takes over so the banner opens on a fresh page.
+    internals.stdout.write('\x1b[2J\x1b[3J\x1b[H')
+
+    const instance = mountTui({
+      store,
+      actions,
+      sessionId: String(agent.session.id),
+      provider: selection.provider,
+      model: selection.model,
+      version: readPackageVersion(),
+      cwd: abbreviateHome(process.cwd()),
+      stdout: internals.stdout,
+      stdin: process.stdin,
+      promptHistory,
+    })
+    mounted.instance = instance
+
+    return { agent, store, instance, disposeAgent: dispose, unsubscribers, closing: false }
+  }
+
+  let current = await attachSession(config.resume)
+
+  async function shutdown(): Promise<void> {
+    if (current.closing) return
+    current.closing = true
+    current.agent.cancel({ kind: 'user' })
+    await current.agent.whenIdle()
+    await sessions?.flush(current.agent.session)
+    current.instance.unmount()
+    io.exit(0)
+  }
+
+  /** Flush and drop the live session, then attach a brand-new one in a freshly cleared screen. */
+  async function clearSession(): Promise<void> {
+    if (current.closing) return
+    const old = current
+    old.closing = true
+    old.agent.cancel({ kind: 'user' })
+    await old.agent.whenIdle()
+    await sessions?.flush(old.agent.session)
+    await old.disposeAgent()
+    for (const off of old.unsubscribers) off()
+    old.instance.unmount()
+    // Ink's own raw-mode teardown (from the old PromptInput's `useInput` cleanup)
+    // is scheduled via a passive-effect flush and a nested microtask, not run
+    // synchronously by `unmount()` — mounting the new instance before that
+    // settles lets the old instance's deferred `stdin.setRawMode(false)` clobber
+    // the new instance's raw mode right after it enables it, so arrow keys (and
+    // all other input) stop working post-`/clear`. Waiting for exit here
+    // serializes teardown before the new instance takes over stdin.
+    await old.instance.waitUntilExit()
+    current = await attachSession(undefined)
+  }
+
   // The Ink instance is the effect: plugin disposal must always release stdin.
-  ctx.effect(() => () => instance.unmount())
+  ctx.effect(() => () => current.instance.unmount())
 }
 
 /**
