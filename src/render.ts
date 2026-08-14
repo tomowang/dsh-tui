@@ -5,6 +5,7 @@
  * @module @tomowang/dsh-tui/render
  */
 
+import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 
 /** Where rendered lines go; tests substitute captures. */
@@ -31,9 +32,9 @@ function truncate(text: string, max: number): string {
 }
 
 /** Join the text blocks of a message content array. */
-function textOf(content: readonly { type: string; [key: string]: unknown }[]): string {
+function textOf(content: readonly ContentBlock[]): string {
   return content
-    .filter((block): block is { type: 'text'; text: string } => block.type === 'text' && typeof block.text === 'string')
+    .filter(block => block.type === 'text')
     .map(block => block.text)
     .join('')
 }
