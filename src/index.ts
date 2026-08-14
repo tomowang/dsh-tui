@@ -13,12 +13,10 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { createInterface } from 'node:readline'
-import type { Interface } from 'node:readline'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
-import type { Agent, ModelSelectionRef } from '@deepseek-ai/dsh-agent'
+import type { ModelSelectionRef } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
@@ -26,9 +24,11 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 // and the cmdline Context merge for the appExit host value.
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-cmdline'
+import type { Instance } from 'ink'
 
-import { renderEvent } from './render.js'
-import type { RenderIo } from './render.js'
+import { TuiStore } from './tui/store.js'
+import { mountTui } from './tui/mount.js'
+import type { TuiActions } from './tui/App.js'
 
 /** Stable Cordis plugin name. */
 export const name = 'tui'
@@ -47,30 +47,33 @@ export const Config: z<Config> = z.object({
 })
 
 /** Process-facing effects of the interactive loop; tests substitute captures. */
-interface TuiIo extends RenderIo {
+interface TuiIo {
+  write(chunk: string): unknown
   /** Request process exit with `code` after the tree disposes. */
   exit(code: number): void
 }
 
-/** The process stream the TUI writes to; tests substitute a capture. */
-export const internals: { stdout: RenderIo } = {
+/** The process stream the TUI writes to and mounts Ink on; tests substitute a capture. */
+export const internals: { stdout: NodeJS.WriteStream } = {
   stdout: process.stdout,
 }
 
 /** Report an unexpected front-door failure and request a failing exit. */
-function fail(io: TuiIo, error: unknown): void {
+function fail(io: TuiIo, error: unknown, instance: Instance | undefined): void {
+  instance?.unmount()
   io.write(`dsh-tui: ${error instanceof Error ? error.message : String(error)}\n`)
   io.exit(1)
 }
 
 /**
  * Drive one interactive session: create or resume the Agent, replay its log,
- * follow live session events, and loop on terminal line input.
+ * follow live session events, and mount the Ink front end for input.
  * @param ctx - plugin context carrying the Agent, default model, and Session services.
  * @param config - validated startup config.
  * @param io - process-facing effects.
+ * @param mounted - written once Ink mounts, so a later rejection can unmount before reporting.
  */
-async function run(ctx: Context, config: Config, io: TuiIo): Promise<void> {
+async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?: Instance }): Promise<void> {
   // Loader siblings mount concurrently. Await the complete application before
   // creating an Agent so its scoped tools and adapters are not half-composed.
   await ctx.get('loader')?.await()
@@ -93,21 +96,39 @@ async function run(ctx: Context, config: Config, io: TuiIo): Promise<void> {
   })
   await agent.whenIdle()
 
-  // Replay persisted history, then follow the same log live; the seq boundary
-  // keeps one rendering pass per event across the two phases.
-  let renderedThrough = 0
-  for (const event of agent.session.events) {
-    renderEvent(event, io, { replay: true })
-    renderedThrough = event.seq
-  }
+  io.write(`session ${String(agent.session.id)} · ${selection.provider}/${selection.model}\n`)
+  io.write('type a message; /status for a snapshot; /exit to quit\n\n')
+
+  // Seed the store from persisted history, then follow the same log live; the
+  // store's seq boundary keeps one rendering pass per event across replay and
+  // live phases, and `--resume` starts with any pending inbox already shown.
+  const store = new TuiStore({ events: agent.session.events })
+  store.setStatus(agent.status)
+  store.setQueued([...agent.inbox.nextStep, ...agent.inbox.nextTurn])
+
   ctx.on('session/event', (session, event) => {
     if (session !== agent.session) return
-    if (event.seq <= renderedThrough) return
-    renderedThrough = event.seq
-    renderEvent(event, io, { replay: false })
+    store.appendEvent(event)
   })
-
-  startLineLoop(ctx, agent, io, () => shutdown())
+  ctx.on('agent/status', (payload) => {
+    if (payload.agent !== agent) return
+    store.setStatus(payload.status)
+  })
+  const resnapshotQueue = (): void => {
+    store.setQueued([...agent.inbox.nextStep, ...agent.inbox.nextTurn])
+  }
+  ctx.on('agent/inbox/inserted', (payload) => {
+    if (payload.agent !== agent) return
+    resnapshotQueue()
+  })
+  ctx.on('agent/inbox/claimed', (payload) => {
+    if (payload.agent !== agent) return
+    resnapshotQueue()
+  })
+  ctx.on('agent/inbox/discarded', (payload) => {
+    if (payload.agent !== agent) return
+    resnapshotQueue()
+  })
 
   let closing = false
   async function shutdown(): Promise<void> {
@@ -116,62 +137,44 @@ async function run(ctx: Context, config: Config, io: TuiIo): Promise<void> {
     agent.cancel({ kind: 'user' })
     await agent.whenIdle()
     await sessions?.flush(agent.session)
+    instance.unmount()
     io.exit(0)
   }
 
-  io.write(`session ${String(agent.session.id)} · ${selection.provider}/${selection.model}\n`)
-  io.write('type a message; /status for a snapshot; /exit to quit\n\n')
-}
-
-/**
- * Own the readline surface: prompt while idle, steer while running, and route
- * the terminal-only commands. The readline handle is an effect so plugin
- * disposal always releases stdin.
- */
-function startLineLoop(ctx: Context, agent: Agent, io: TuiIo, shutdown: () => Promise<void>): void {
-  let status: 'idle' | 'running' = 'idle'
-  const rl: Interface = createInterface({ input: process.stdin, output: process.stdout, prompt: '› ' })
-  ctx.effect(() => () => rl.close())
-
-  ctx.on('agent/status', (payload) => {
-    if (payload.agent !== agent) return
-    status = payload.status === 'running' ? 'running' : 'idle'
-    if (status === 'idle') rl.prompt(true)
-  })
-
-  rl.on('line', (line) => {
-    const text = line.trim()
-    if (text === '') {
-      if (status === 'idle') rl.prompt()
-      return
-    }
-    if (text === '/exit' || text === '/quit') {
-      void shutdown()
-      return
-    }
-    if (text === '/status') {
-      io.write(`session ${String(agent.session.id)} · ${status} · ${agent.session.events.length} logged events\n`)
-      if (status === 'idle') rl.prompt()
-      return
-    }
-    const message = createUserMessage({
-      content: [{ type: 'text', text }],
-      source: { kind: 'user' },
-    })
-    // An idle driver opens a turn from follow-up; a running one takes steering.
-    if (status === 'running') agent.steer(message)
-    else agent.followup(message)
-  })
-
-  rl.on('SIGINT', () => {
-    if (status === 'running') {
+  const actions: TuiActions = {
+    send(text) {
+      store.setNotice(undefined)
+      const message = createUserMessage({
+        content: [{ type: 'text', text }],
+        source: { kind: 'user' },
+      })
+      // An idle driver opens a turn from follow-up; a running one takes steering.
+      if (agent.status === 'running') agent.steer(message)
+      else agent.followup(message)
+    },
+    cancel() {
       agent.cancel({ kind: 'user' })
-      return
-    }
-    void shutdown()
-  })
+    },
+    shutdown() {
+      void shutdown()
+    },
+    status() {
+      store.setNotice(`session ${String(agent.session.id)} · ${agent.status} · ${agent.session.events.length} logged events`)
+    },
+  }
 
-  rl.prompt()
+  const instance = mountTui({
+    store,
+    actions,
+    sessionId: String(agent.session.id),
+    provider: selection.provider,
+    model: selection.model,
+    stdout: internals.stdout,
+    stdin: process.stdin,
+  })
+  mounted.instance = instance
+  // The Ink instance is the effect: plugin disposal must always release stdin.
+  ctx.effect(() => () => instance.unmount())
 }
 
 /**
@@ -192,5 +195,6 @@ export function apply(ctx: Context, config: Config): void {
     throw new Error('dsh-tui: the launcher must provide ctx.appExit before the tree mounts')
   }
   const io: TuiIo = { write: chunk => internals.stdout.write(chunk), exit }
-  void run(ctx, config, io).catch((error: unknown) => { fail(io, error) })
+  const mounted: { instance?: Instance } = {}
+  void run(ctx, config, io, mounted).catch((error: unknown) => { fail(io, error, mounted.instance) })
 }

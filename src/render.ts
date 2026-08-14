@@ -8,11 +8,6 @@
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 
-/** Where rendered lines go; tests substitute captures. */
-export interface RenderIo {
-  write(chunk: string): unknown
-}
-
 /** Rendering context: replay walks history already in the log. */
 export interface RenderOptions {
   /** True while replaying persisted events on startup. */
@@ -26,7 +21,7 @@ const red = (s: string): string => `${ESC}31m${s}${ESC}0m`
 const yellow = (s: string): string => `${ESC}33m${s}${ESC}0m`
 
 /** Clamp one-line summaries so tool arguments cannot flood the transcript. */
-function truncate(text: string, max: number): string {
+export function truncate(text: string, max: number): string {
   const oneLine = text.replaceAll('\n', ' ')
   return oneLine.length <= max ? oneLine : `${oneLine.slice(0, max - 1)}…`
 }
@@ -40,42 +35,39 @@ function textOf(content: readonly ContentBlock[]): string {
 }
 
 /**
- * Render one durable session event to the terminal. Unknown event types are
- * silently skipped: the log's vocabulary is merge-extensible and a transcript
- * viewer must tolerate events from plugins it does not know.
+ * Format one durable session event as a terminal line, or `undefined` for
+ * events this viewer does not present. Unknown event types are silently
+ * skipped: the log's vocabulary is merge-extensible and a transcript viewer
+ * must tolerate events from plugins it does not know.
  * @param event - the durable session event to project.
- * @param io - output stream.
  * @param options - replay/live rendering context.
  */
-export function renderEvent(event: SessionEvent, io: RenderIo, options: RenderOptions): void {
+export function formatEvent(event: SessionEvent, options: RenderOptions): string | undefined {
   switch (event.type) {
     case 'user/message': {
       // Live input was just typed by the reader; only replay re-shows it.
-      if (!options.replay) return
+      if (!options.replay) return undefined
       const text = textOf(event.data.content)
-      if (text !== '') io.write(`${dim('you ›')} ${text}\n`)
-      return
+      return text === '' ? undefined : `${dim('you ›')} ${text}`
     }
     case 'assistant/message': {
       const text = textOf(event.data.message.content)
-      if (text !== '') io.write(`\n${text}\n\n`)
-      return
+      return text === '' ? undefined : `\n${text}\n`
     }
     case 'tool/call': {
-      io.write(`${cyan('⚙')} ${event.data.name} ${dim(truncate(event.data.arguments, 100))}\n`)
-      return
+      return `${cyan('⚙')} ${event.data.name} ${dim(truncate(event.data.arguments, 100))}`
     }
     case 'turn/end': {
       const reason = event.data.reason
       if (reason.kind === 'error') {
-        io.write(`${red('✖')} ${reason.error.code}: ${reason.error.message}\n`)
+        return `${red('✖')} ${reason.error.code}: ${reason.error.message}`
       } else if (reason.kind === 'aborted') {
-        io.write(`${yellow('⏹')} ${dim('turn canceled')}\n`)
+        return `${yellow('⏹')} ${dim('turn canceled')}`
       }
-      return
+      return undefined
     }
     default:
       // Merge-extensible union: events this viewer does not present fall through.
-      return
+      return undefined
   }
 }
