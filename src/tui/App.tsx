@@ -55,6 +55,7 @@ export function App({ store, actions, sessionId, provider, model, version, cwd, 
   const rows = windowRows || stdout.rows || 24
   const columns = windowColumns || initialColumns || stdout.columns || 80
   const [commandMatchesCount, setCommandMatchesCount] = useState(0)
+  const [promptLineCount, setPromptLineCount] = useState(1)
 
   // The banner is a fixed item 0; events only ever append after it, so
   // Static's index-based "already printed" bookkeeping stays correct even
@@ -91,9 +92,11 @@ export function App({ store, actions, sessionId, provider, model, version, cwd, 
     const noticeLines = state.notice === undefined ? 0 : state.notice.split('\n').length
     const queuedLines = state.queued.length
     const statusBarLines = 1
-    const promptLines = 3 + commandMatchesCount
+    // 2 accounts for the prompt box's top/bottom border; promptLineCount is
+    // its content rows, which grow with a multi-line draft.
+    const promptLines = 2 + promptLineCount + commandMatchesCount
     return noticeLines + queuedLines + statusBarLines + promptLines
-  }, [state.overlay, state.notice, state.queued.length, commandMatchesCount])
+  }, [state.overlay, state.notice, state.queued.length, commandMatchesCount, promptLineCount])
 
   // Ink appends a trailing newline to interactive frames (output + '\n'),
   // so we subtract 1 to ensure total rendered lines don't exceed terminal rows.
@@ -129,6 +132,7 @@ export function App({ store, actions, sessionId, provider, model, version, cwd, 
               status={state.status}
               actions={actions}
               onCommandMatchesChange={setCommandMatchesCount}
+              onLinesChange={setPromptLineCount}
               history={promptHistory}
             />
           </>
