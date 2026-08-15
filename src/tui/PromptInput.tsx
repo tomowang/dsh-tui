@@ -27,10 +27,10 @@
  * @module @tomowang/dsh-tui/tui/PromptInput
  */
 
-import { useEffect, useReducer, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type Dispatch } from 'react'
 import { Box, Text, useInput } from 'ink'
 import type { AgentStatus } from '@deepseek-ai/dsh-agent'
-import { matchSlashCommands, runSlashCommand } from './commands.js'
+import { commandQuery, matchSlashCommands, runSlashCommand } from './commands.js'
 import type { ProviderDraft, ProviderRow } from './modelProfile/types.js'
 
 export interface TuiActions {
@@ -72,9 +72,13 @@ export interface TuiActions {
 export interface PromptInputProps {
   readonly status: AgentStatus
   readonly actions: TuiActions
-  readonly onCommandMatchesChange?: (count: number) => void
-  /** Notified with the input's current visual line count, so the caller can size the layout around a growing multi-line draft. */
-  readonly onLinesChange?: (lines: number) => void
+  /**
+   * The prompt buffer, owned by `App` so it can size the layout around the
+   * command dropdown and multi-line drafts in the same render that
+   * `PromptInput` reflects them in — see `bufferReducer`'s module doc.
+   */
+  readonly state: PromptState
+  readonly dispatch: Dispatch<Action>
   /**
    * Submitted-line history for up/down-arrow recall. Owned by the caller
    * (outside the Ink tree) so it survives `/clear` remounting this component.
@@ -152,17 +156,9 @@ function renderLineContent(line: string, cursorCol: number | null) {
   )
 }
 
-function commandQuery(value: string): { isCommandMode: boolean; matches: ReturnType<typeof matchSlashCommands> } {
-  // A trailing space (but no *internal* whitespace) still counts as command
-  // mode, so `"/status "` behaves like `value.trim() === '/status'`.
-  const query = value.trim()
-  const isCommandMode = value.startsWith('/') && !/\s/.test(query)
-  return { isCommandMode, matches: isCommandMode ? matchSlashCommands(query) : [] }
-}
-
 // --- Buffer state/reducer ---
 
-interface PromptState {
+export interface PromptState {
   readonly value: string
   readonly cursor: number
   readonly selectedIndex: number
@@ -171,9 +167,9 @@ interface PromptState {
   readonly draft: string
 }
 
-const initialState: PromptState = { value: '', cursor: 0, selectedIndex: 0, historyIndex: null, draft: '' }
+export const initialState: PromptState = { value: '', cursor: 0, selectedIndex: 0, historyIndex: null, draft: '' }
 
-type Action =
+export type Action =
   | { type: 'insert'; text: string }
   | { type: 'backspace' }
   | { type: 'deleteForward' }
@@ -194,7 +190,7 @@ type Action =
   | { type: 'reset' }
   | { type: 'completeCommand'; text: string }
 
-function bufferReducer(state: PromptState, action: Action): PromptState {
+export function bufferReducer(state: PromptState, action: Action): PromptState {
   switch (action.type) {
     case 'insert': {
       const value = state.value.slice(0, state.cursor) + action.text + state.value.slice(state.cursor)
@@ -301,8 +297,7 @@ function bufferReducer(state: PromptState, action: Action): PromptState {
   }
 }
 
-export function PromptInput({ status, actions, onCommandMatchesChange, onLinesChange, history }: PromptInputProps) {
-  const [state, dispatch] = useReducer(bufferReducer, initialState)
+export function PromptInput({ status, actions, state, dispatch, history }: PromptInputProps) {
   const [armedKey, setArmedKey] = useState<'c' | 'd' | null>(null)
   const armTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -315,14 +310,6 @@ export function PromptInput({ status, actions, onCommandMatchesChange, onLinesCh
   const { isCommandMode, matches } = commandQuery(state.value)
   const selected = matches.length === 0 ? 0 : Math.min(state.selectedIndex, matches.length - 1)
   const lines = state.value.split('\n')
-
-  useEffect(() => {
-    onCommandMatchesChange?.(matches.length)
-  }, [matches.length, onCommandMatchesChange])
-
-  useEffect(() => {
-    onLinesChange?.(lines.length)
-  }, [lines.length, onLinesChange])
 
   // A second press of the same key within the timeout confirms exit; a
   // different key (or an expired arm) starts a fresh arm instead.

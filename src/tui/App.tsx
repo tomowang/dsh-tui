@@ -6,7 +6,7 @@
  * @module @tomowang/dsh-tui/tui/App
  */
 
-import { useMemo, useState, useSyncExternalStore } from 'react'
+import { useMemo, useReducer, useSyncExternalStore } from 'react'
 import { Box, Static, Text, useStdout, useWindowSize } from 'ink'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { TuiStore } from './store.js'
@@ -16,10 +16,11 @@ import { StatusBar } from './StatusBar.js'
 import { StatsLine } from './StatsLine.js'
 import { QueuedIndicator } from './QueuedIndicator.js'
 import { PermissionIndicator } from './PermissionIndicator.js'
-import { PromptInput, type TuiActions } from './PromptInput.js'
+import { PromptInput, bufferReducer, initialState, type TuiActions } from './PromptInput.js'
 import { ModelProfileOverlay } from './modelProfile/ModelProfileOverlay.js'
 import { buildBannerText } from './bannerText.js'
 import { buildStatsLine } from './statsFormat.js'
+import { commandQuery } from './commands.js'
 import { formatEvent } from '../render.js'
 
 export type { TuiActions } from './PromptInput.js'
@@ -57,8 +58,14 @@ export function App({ store, actions, sessionId, provider, model, version, cwd, 
   const { rows: windowRows, columns: windowColumns } = useWindowSize()
   const rows = windowRows || stdout.rows || 24
   const columns = windowColumns || initialColumns || stdout.columns || 80
-  const [commandMatchesCount, setCommandMatchesCount] = useState(0)
-  const [promptLineCount, setPromptLineCount] = useState(1)
+  // Owned here (not inside PromptInput) so this component's own layout math
+  // below can read the buffer synchronously in the same render that
+  // PromptInput reflects it in — a child→parent effect callback would lag
+  // one commit behind, sizing the spacer for the *previous* frame's dropdown
+  // and overflowing the terminal for one frame when e.g. `/` is typed.
+  const [promptState, promptDispatch] = useReducer(bufferReducer, initialState)
+  const commandMatchesCount = useMemo(() => commandQuery(promptState.value).matches.length, [promptState.value])
+  const promptLineCount = useMemo(() => promptState.value.split('\n').length, [promptState.value])
 
   // The banner is a fixed item 0; events only ever append after it, so
   // Static's index-based "already printed" bookkeeping stays correct even
@@ -141,8 +148,8 @@ export function App({ store, actions, sessionId, provider, model, version, cwd, 
             <PromptInput
               status={state.status}
               actions={actions}
-              onCommandMatchesChange={setCommandMatchesCount}
-              onLinesChange={setPromptLineCount}
+              state={promptState}
+              dispatch={promptDispatch}
               history={promptHistory}
             />
             <PermissionIndicator permission={state.permission} />
