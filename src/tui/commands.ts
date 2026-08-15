@@ -21,6 +21,9 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
   { command: '/quit', description: 'Exit dsh-tui' },
 ]
 
+/** Widest command text, so the dropdown can pad every row's description to the same column. */
+export const SLASH_COMMAND_WIDTH = Math.max(...SLASH_COMMANDS.map(c => c.command.length))
+
 export function matchSlashCommands(query: string): readonly SlashCommand[] {
   return SLASH_COMMANDS.filter(c => c.command.startsWith(query))
 }

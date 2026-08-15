@@ -30,7 +30,7 @@
 import { useEffect, useRef, useState, type Dispatch } from 'react'
 import { Box, Text, useInput } from 'ink'
 import type { AgentStatus } from '@deepseek-ai/dsh-agent'
-import { commandQuery, matchSlashCommands, runSlashCommand } from './commands.js'
+import { commandQuery, matchSlashCommands, runSlashCommand, SLASH_COMMAND_WIDTH } from './commands.js'
 import type { ProviderDraft, ProviderRow } from './modelProfile/types.js'
 
 export interface TuiActions {
@@ -485,7 +485,7 @@ export function PromptInput({ status, actions, state, dispatch, history }: Promp
         <Box flexDirection="column" paddingX={1}>
           {matches.map((cmd, i) => (
             <Text key={cmd.command} inverse={i === selected}>
-              {cmd.command.padEnd(10)} {cmd.description}
+              {cmd.command.padEnd(SLASH_COMMAND_WIDTH)} {cmd.description}
             </Text>
           ))}
         </Box>
