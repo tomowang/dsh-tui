@@ -60,4 +60,4 @@ Changelog and GitHub Release notes are generated from [Conventional Commits](htt
 3. Review the diff, then `git add package.json CHANGELOG.md && git commit -m "chore(release): vX.Y.Z"`.
 4. `git tag vX.Y.Z && git push && git push --tags`.
 
-Pushing the tag triggers `.github/workflows/release.yml`, which re-verifies the build, checks the tag matches `package.json`'s version, cuts a GitHub Release from `CHANGELOG.md`'s latest section, and publishes to npm using the `NPM_TOKEN` repo secret.
+Pushing the tag triggers `.github/workflows/release.yml`, which re-verifies the build, checks the tag matches `package.json`'s version, cuts a GitHub Release from `CHANGELOG.md`'s latest section, and publishes to npm via [Trusted Publishing](https://docs.npmjs.com/trusted-publishers/) (OIDC — no stored npm token). One-time setup: on the `@tomowang/dsh-tui` package's npmjs.com settings, add a Trusted Publisher pointing at this GitHub repo with workflow filename `release.yml`.
