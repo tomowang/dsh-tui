@@ -19,10 +19,10 @@ const LABELS: Record<string, string> = {
 }
 
 const ICONS: Record<string, string> = {
-  'read-only': '🔒',
-  'workspace-write': '✏️',
-  'danger-full-access': '⚠️',
-  custom: '⚙️',
+  'read-only': '⊘',
+  'workspace-write': '✎',
+  'danger-full-access': '‼',
+  custom: '⊛',
 }
 
 const COLORS: Record<string, string> = {
