@@ -26,7 +26,7 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
-import type { SettingsPathOp } from '@deepseek-ai/dsh-settings'
+import type { SettingsPathOp, SettingsScope } from '@deepseek-ai/dsh-settings'
 // Empty type imports carry the loader Context merge for the mount await,
 // the cmdline Context merge for the appExit host value, the
 // permission-presets Context merge for ctx.permissionPresets, and the
@@ -59,6 +59,16 @@ export const inject = ['agentDefaultModel', 'agents', 'sessions']
 
 /** Settings namespace hand-declared/custom provider profiles are stored under. */
 const CUSTOM_PROVIDER_NAMESPACE = 'llm-pi-ai'
+
+/** Settings namespace submitted-line history is persisted under, for up/down-arrow recall across process restarts. */
+const HISTORY_NAMESPACE = 'tui-history'
+
+/** Persisted prompt-history shape: previously submitted lines, oldest first. */
+interface HistorySettings {
+  entries: string[]
+}
+
+const HistorySettings: z<HistorySettings> = z.object({ entries: z.array(z.string()) })
 
 /** Read a nested value out of an untyped resolved/raw settings section. */
 function getAtPath(value: unknown, path: readonly string[]): unknown {
@@ -156,6 +166,34 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
   // engine just tells the reader /compact is unavailable instead of
   // refusing to start.
   const compaction = ctx.get('compaction')
+  // Same optional-service pattern: a profile without a mounted settings
+  // service just keeps prompt history in memory for the process's lifetime
+  // instead of refusing to start. Registration can also fail loud on an
+  // invalid stored section — degrade the same way rather than crash.
+  const settingsForHistory = ctx.get('settings')
+  let historyScope: SettingsScope<HistorySettings> | undefined
+  if (settingsForHistory !== undefined) {
+    try {
+      historyScope = settingsForHistory.register(settingsNamespace(HISTORY_NAMESPACE), HistorySettings)
+    } catch {
+      historyScope = undefined
+    }
+  }
+
+  /**
+   * Best-effort persist of one new history line. Reads the settings scope's
+   * current resolved value rather than this process's own `promptHistory`
+   * copy — the file provider hot-reloads other processes' writes into it —
+   * so two `dsh-tui` processes appending around the same time are less
+   * likely to clobber each other than a naive replace-with-local-array
+   * write would be. Not a real lock: a tight enough race can still stomp.
+   */
+  function persistHistory(line: string): void {
+    if (historyScope === undefined) return
+    const current = historyScope.get().entries
+    if (current.at(-1) === line) return
+    void historyScope.replace({ entries: [...current, line] }).catch(() => {})
+  }
 
   /** Guard for the three optional model-profile services, together or not at all. Re-resolved on every call, not cached: a profile that mounts these after startup should still be picked up. */
   function requireModelProfileServices() {
@@ -338,8 +376,10 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
   }
 
   // Owned here (outside the Ink tree) rather than inside PromptInput so `/clear`'s
-  // remount doesn't lose the reader's up/down-arrow recall.
-  const promptHistory: string[] = []
+  // remount doesn't lose the reader's up/down-arrow recall. Seeded from the
+  // settings-backed history namespace (when mounted) so recall also survives
+  // process restarts, not just `/clear`.
+  const promptHistory: string[] = historyScope !== undefined ? [...historyScope.get().entries] : []
 
   /** Create (or resume) one Agent, wire its listeners to a fresh store, and mount a fresh Ink tree. */
   async function attachSession(resumeId: string | undefined): Promise<CurrentSession> {
@@ -432,6 +472,7 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
       status() {
         store.setNotice(`session ${String(agent.session.id)} · ${agent.status} · ${agent.session.events.length} logged events`)
       },
+      recordHistory: persistHistory,
       clear() {
         void clearSession()
       },

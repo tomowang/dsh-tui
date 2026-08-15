@@ -42,6 +42,8 @@ export interface TuiActions {
   shutdown(): void
   /** Publish a transient `/status` snapshot as the live-region notice. */
   status(): void
+  /** Persist one newly submitted history line for cross-session up/down-arrow recall (best-effort; no-op without a settings service). */
+  recordHistory(line: string): void
   /** Flush the current session, then start a brand-new one in a fresh screen. */
   clear(): void
   /** Switch to the next permission preset (read-only/workspace-write/full-access), wrapping around. */
@@ -344,7 +346,10 @@ export function PromptInput({ status, actions, state, dispatch, history }: Promp
     const selectedAtSubmit = selected
     dispatch({ type: 'reset' })
     if (trimmed === '') return
-    if (history.at(-1) !== trimmed) history.push(trimmed)
+    if (history.at(-1) !== trimmed) {
+      history.push(trimmed)
+      actions.recordHistory(trimmed)
+    }
     const commandMatches = trimmed.startsWith('/') && !/\s/.test(trimmed) ? matchSlashCommands(trimmed) : []
     if (commandMatches.length > 0) {
       const chosen = commandMatches[Math.min(selectedAtSubmit, commandMatches.length - 1)]

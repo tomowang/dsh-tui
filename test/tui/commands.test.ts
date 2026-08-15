@@ -8,6 +8,7 @@ function stubActions(): TuiActions {
     cancel: vi.fn(),
     shutdown: vi.fn(),
     status: vi.fn(),
+    recordHistory: vi.fn(),
     clear: vi.fn(),
     cyclePermission: vi.fn(),
     compact: vi.fn(),
