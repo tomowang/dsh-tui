@@ -27,7 +27,7 @@ export function truncate(text: string, max: number): string {
 }
 
 /** Join the text blocks of a message content array. */
-function textOf(content: readonly ContentBlock[]): string {
+export function textOf(content: readonly ContentBlock[]): string {
   return content
     .filter(block => block.type === 'text')
     .map(block => block.text)

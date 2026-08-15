@@ -67,6 +67,11 @@ export interface TuiActions {
   discoverModelsForDraft(draft: ProviderDraft): void
   /** Save `{provider, model}` as the Agent's default model selection. */
   setActiveModel(provider: string, model: string): void
+
+  /** Open the `/trajectory` ledger overlay. */
+  openTrajectory(): void
+  /** Close the `/trajectory` overlay. */
+  closeTrajectory(): void
 }
 
 export interface PromptInputProps {

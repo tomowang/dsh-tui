@@ -20,6 +20,8 @@ function stubActions(): TuiActions {
     deleteProvider: vi.fn(),
     discoverModelsForDraft: vi.fn(),
     setActiveModel: vi.fn(),
+    openTrajectory: vi.fn(),
+    closeTrajectory: vi.fn(),
   }
 }
 
@@ -82,6 +84,13 @@ describe('runSlashCommand', () => {
     const actions = stubActions()
     runSlashCommand('/model', actions)
     expect(actions.openModelProfile).toHaveBeenCalledTimes(1)
+    expect(totalCalls(actions)).toBe(1)
+  })
+
+  it('dispatches /trajectory to openTrajectory', () => {
+    const actions = stubActions()
+    runSlashCommand('/trajectory', actions)
+    expect(actions.openTrajectory).toHaveBeenCalledTimes(1)
     expect(totalCalls(actions)).toBe(1)
   })
 

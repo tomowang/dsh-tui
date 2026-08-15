@@ -489,6 +489,13 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
             store.setNotice(`failed to set default model: ${error instanceof Error ? error.message : String(error)}`)
           })
       },
+
+      openTrajectory() {
+        store.openTrajectory()
+      },
+      closeTrajectory() {
+        store.closeOverlay()
+      },
     }
 
     // Clear the screen before Ink takes over so the banner opens on a fresh page.

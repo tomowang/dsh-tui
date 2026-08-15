@@ -34,6 +34,7 @@ export interface ModelProfileOverlayState {
 export type Overlay =
   | { readonly kind: 'none' }
   | { readonly kind: 'modelProfile'; readonly modelProfile: ModelProfileOverlayState }
+  | { readonly kind: 'trajectory' }
 
 /** Whole-log figures for the status bar's stats line; each side is `undefined` without its projection unit mounted. */
 export interface StatsSnapshot {
@@ -148,6 +149,11 @@ export class TuiStore {
         },
       },
     })
+  }
+
+  /** Open the `/trajectory` ledger overlay. */
+  openTrajectory(): void {
+    this.set({ overlay: { kind: 'trajectory' } })
   }
 
   /** Close whichever overlay is open, restoring the normal prompt/status controls. */

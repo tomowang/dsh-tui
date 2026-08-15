@@ -18,6 +18,7 @@ import { QueuedIndicator } from './QueuedIndicator.js'
 import { PermissionIndicator } from './PermissionIndicator.js'
 import { PromptInput, bufferReducer, initialState, type TuiActions } from './PromptInput.js'
 import { ModelProfileOverlay } from './modelProfile/ModelProfileOverlay.js'
+import { TrajectoryOverlay } from './trajectory/TrajectoryOverlay.js'
 import { buildBannerText } from './bannerText.js'
 import { buildStatsLine } from './statsFormat.js'
 import { commandQuery } from './commands.js'
@@ -104,6 +105,9 @@ export function App({ store, actions, sessionId, provider, model, version, cwd, 
       const listRows = mp.providers?.length ?? 1
       return 2 + errorLine + loadingLine + listRows
     }
+    if (state.overlay.kind === 'trajectory') {
+      return Math.max(10, rows - staticLines - 1)
+    }
     const noticeLines = state.notice === undefined ? 0 : state.notice.split('\n').length
     const queuedLines = state.queued.length
     const statusBarLines = 1
@@ -113,7 +117,7 @@ export function App({ store, actions, sessionId, provider, model, version, cwd, 
     const promptLines = 2 + promptLineCount + commandMatchesCount
     const permissionLines = state.permission === undefined ? 0 : 1
     return noticeLines + queuedLines + statusBarLines + statsLines + promptLines + permissionLines
-  }, [state.overlay, state.notice, state.queued.length, commandMatchesCount, promptLineCount, state.permission, statsLine])
+  }, [state.overlay, state.notice, state.queued.length, commandMatchesCount, promptLineCount, state.permission, statsLine, rows, staticLines])
 
   // Ink appends a trailing newline to interactive frames (output + '\n'),
   // so we subtract 1 to ensure total rendered lines don't exceed terminal rows.
@@ -134,6 +138,8 @@ export function App({ store, actions, sessionId, provider, model, version, cwd, 
         {spacerHeight > 0 && <Box height={spacerHeight} />}
         {state.overlay.kind === 'modelProfile' ? (
           <ModelProfileOverlay modelProfile={state.overlay.modelProfile} actions={actions} />
+        ) : state.overlay.kind === 'trajectory' ? (
+          <TrajectoryOverlay events={state.events} availableRows={dynamicLines} actions={actions} />
         ) : (
           <>
             {state.notice === undefined ? null : <Text>{state.notice}</Text>}
