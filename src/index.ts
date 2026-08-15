@@ -384,21 +384,23 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
   /** Create (or resume) one Agent, wire its listeners to a fresh store, and mount a fresh Ink tree. */
   async function attachSession(resumeId: string | undefined): Promise<CurrentSession> {
     const selection = defaultModel.currentSelection()
-    const sessionId = SessionId(resumeId ?? `session-${randomUUID()}`)
+    const agentOptions = { provider: selection.provider, model: selection.model }
+    const setup = (agentCtx: Context): void => {
+      const selected: ModelSelectionRef = { current: selection, assembled: undefined }
+      installModelSelection(agentCtx, selected)
+    }
     // dsh-agent's own doc calls `dispose` a portable CAPABILITY meant to be
     // handed to another owner (exactly what happens below, into
     // `disposeAgent`) — detaching it from the result object is the intended
     // usage, not an accidental `this` loss.
     // eslint-disable-next-line @typescript-eslint/unbound-method
-    const { agent, dispose } = await agents.create({
-      sessionId,
-      meta: { cwd: process.cwd() },
-      agentOptions: { provider: selection.provider, model: selection.model },
-      setup: (agentCtx) => {
-        const selected: ModelSelectionRef = { current: selection, assembled: undefined }
-        installModelSelection(agentCtx, selected)
-      },
-    })
+    const { agent, dispose } = resumeId !== undefined
+      // `resume` loads the persisted log through `ctx.sessionPersistence`
+      // before booting the agent on it; `create` never touches persistence,
+      // so pointing it at an existing id (the old behavior here) built a
+      // near-empty session that collided with the real log on first write.
+      ? await agents.resume({ resumeSessionId: SessionId(resumeId), agentOptions, setup })
+      : await agents.create({ sessionId: SessionId(`session-${randomUUID()}`), meta: { cwd: process.cwd() }, agentOptions, setup })
     await agent.whenIdle()
 
     // Seed the store from persisted history, then follow the same log live; the
@@ -624,6 +626,7 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
     await current.agent.whenIdle()
     await sessions.flush(current.agent.session)
     current.instance.unmount()
+    io.write(`resume with: dsh --profile tui --resume ${String(current.agent.session.id)}\n`)
     io.exit(0)
   }
 
