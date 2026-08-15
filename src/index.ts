@@ -44,6 +44,7 @@ import type {} from '@deepseek-ai/dsh-token-meter'
 import type {} from '@deepseek-ai/dsh-user-approval'
 import type { Instance } from 'ink'
 
+import { ensureSessionIdPrefix, stripSessionIdPrefix } from './sessionId.js'
 import { TuiStore } from './tui/store.js'
 import type { ModelProfileOverlayState, PermissionState, StatsSnapshot } from './tui/store.js'
 import { mountTui } from './tui/mount.js'
@@ -425,7 +426,7 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
       // before booting the agent on it; `create` never touches persistence,
       // so pointing it at an existing id (the old behavior here) built a
       // near-empty session that collided with the real log on first write.
-      ? await agents.resume({ resumeSessionId: SessionId(resumeId), agentOptions, setup })
+      ? await agents.resume({ resumeSessionId: SessionId(ensureSessionIdPrefix(resumeId)), agentOptions, setup })
       : await agents.create({ sessionId: SessionId(`session-${randomUUID()}`), meta: { cwd: process.cwd() }, agentOptions, setup })
     await agent.whenIdle()
 
@@ -664,7 +665,7 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
     await current.agent.whenIdle()
     await sessions.flush(current.agent.session)
     current.instance.unmount()
-    io.write(`resume with: dsh --profile tui --resume ${String(current.agent.session.id)}\n`)
+    io.write(`resume with: dsh --profile tui --resume ${stripSessionIdPrefix(String(current.agent.session.id))}\n`)
     io.exit(0)
   }
 
