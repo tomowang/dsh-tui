@@ -2,6 +2,30 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.0] - 2026-08-15
+
+### Bug Fixes
+
+- Align slash-command dropdown to the widest command
+- Swap permission-indicator emoji for monochrome glyphs
+- Resume a session's persisted log instead of colliding with it
+- Drop redundant session- prefix from status bar and resume hint
+- Merge context indicator into stats line instead of a separate row
+
+### Documentation
+
+- Document current TUI features, commands, and shortcuts in README
+
+### Features
+
+- Switch npm publish to Trusted Publishing (OIDC)
+- Add /trajectory ledger overlay
+- Add /compact manual compaction command
+- Add /context context-usage indicator
+- Persist prompt-line history across sessions
+- Add /plugins loaded-plugin-tree command
+- Add agent preset support (/presets, --agent-preset, status bar)
+
 ## [0.1.0] - 2026-08-15
 
 ### Bug Fixes
@@ -11,6 +35,7 @@ All notable changes to this project are documented in this file.
 - Pin session stats line to the bottom row
 - Render tool/result events in the transcript
 - Harden startup guards and custom-provider persistence
+- Lift prompt buffer state into App to size layout same-frame
 
 ### Chores
 
@@ -39,6 +64,7 @@ All notable changes to this project are documented in this file.
 - Add Shift+Tab permission-mode switching to the prompt
 - Add whole-log session stats line to the status bar
 - Add Tab command completion to the prompt
+- Add git-cliff changelog + npm publish release workflow
 
 ### Testing
 
