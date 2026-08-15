@@ -26,6 +26,8 @@ function stubActions(): TuiActions {
     closeTrajectory: vi.fn(),
     openContext: vi.fn(),
     closeContext: vi.fn(),
+    openPlugins: vi.fn(),
+    closePlugins: vi.fn(),
   }
 }
 
@@ -102,6 +104,13 @@ describe('runSlashCommand', () => {
     const actions = stubActions()
     runSlashCommand('/context', actions)
     expect(actions.openContext).toHaveBeenCalledTimes(1)
+    expect(totalCalls(actions)).toBe(1)
+  })
+
+  it('dispatches /plugins to openPlugins', () => {
+    const actions = stubActions()
+    runSlashCommand('/plugins', actions)
+    expect(actions.openPlugins).toHaveBeenCalledTimes(1)
     expect(totalCalls(actions)).toBe(1)
   })
 

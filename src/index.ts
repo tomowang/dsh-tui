@@ -14,7 +14,7 @@
 
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
-import type { Context } from '@deepseek-ai/cordis'
+import { FiberState, type Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
 import type { Agent, ModelSelectionRef } from '@deepseek-ai/dsh-agent'
@@ -50,6 +50,7 @@ import { mountTui } from './tui/mount.js'
 import type { TuiActions } from './tui/App.js'
 import { readPackageVersion } from './version.js'
 import type { ProviderDraft, ProviderRow, StoredProviderProfile } from './tui/modelProfile/types.js'
+import type { PluginRow } from './tui/plugins/types.js'
 
 /** Stable Cordis plugin name. */
 export const name = 'tui'
@@ -85,6 +86,18 @@ function deriveApiKeyRef(route: string): string {
   const upper = route.toUpperCase().replace(/[^A-Z0-9]+/g, '_')
   const identifier = /^[A-Z_]/.test(upper) ? upper : `P_${upper}`
   return `${identifier}_API_KEY`
+}
+
+/** Map a loader entry's live fiber state to the `/plugins` overlay's display label. */
+function fiberStateLabel(state: FiberState): PluginRow['state'] {
+  switch (state) {
+    case FiberState.PENDING: return 'pending'
+    case FiberState.LOADING: return 'loading'
+    case FiberState.ACTIVE: return 'active'
+    case FiberState.FAILED: return 'failed'
+    case FiberState.DISPOSED: return 'disposed'
+    case FiberState.UNLOADING: return 'unloading'
+  }
 }
 
 /** Short, user-facing text for each `ManualCompactionError` code, mirroring the harness's `command-compact` plugin. */
@@ -222,6 +235,19 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
       contextPressure: values.contextPressure,
       contextBreakdown: values.contextBreakdown,
     }
+  }
+
+  /** Snapshot the loader's current entry tree into plain display rows, or `undefined` without a mounted loader. */
+  function pluginRows(): PluginRow[] | undefined {
+    const loader = ctx.get('loader')
+    if (loader === undefined) return undefined
+    return [...loader.entries()].map(entry => ({
+      id: entry.id,
+      name: entry.options.name,
+      disabled: entry.disabled,
+      group: Boolean(entry.options.group),
+      state: entry.fiber === undefined ? undefined : fiberStateLabel(entry.fiber.state),
+    }))
   }
 
   /** The open `/model` overlay's sub-state, or `undefined` while it's closed. */
@@ -593,6 +619,18 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
         store.openContext()
       },
       closeContext() {
+        store.closeOverlay()
+      },
+
+      openPlugins() {
+        const rows = pluginRows()
+        if (rows === undefined) {
+          store.setNotice('plugin list is not available in this profile')
+          return
+        }
+        store.openPlugins(rows)
+      },
+      closePlugins() {
         store.closeOverlay()
       },
     }

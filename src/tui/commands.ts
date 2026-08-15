@@ -16,6 +16,7 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
   { command: '/model', description: 'Manage LLM provider profiles' },
   { command: '/trajectory', description: 'Browse the turn/step event ledger' },
   { command: '/context', description: 'Show context window usage' },
+  { command: '/plugins', description: 'Show the loaded plugin tree' },
   { command: '/compact', description: 'Summarize and compact session history' },
   { command: '/status', description: 'Show session status' },
   { command: '/clear', description: 'Clear the screen and start a new session' },
@@ -58,6 +59,9 @@ export function runSlashCommand(command: string, actions: TuiActions): void {
       return
     case '/context':
       actions.openContext()
+      return
+    case '/plugins':
+      actions.openPlugins()
       return
     case '/compact':
       actions.compact()

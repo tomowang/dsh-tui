@@ -12,6 +12,7 @@ import type { SessionEvent, UserMessage } from '@deepseek-ai/dsh-session'
 import type { SessionStatsProjection } from '@deepseek-ai/dsh-session-stats'
 import type { ContextBreakdownProjection, ContextPressureProjection, TokenUsageProjection } from '@deepseek-ai/dsh-token-meter'
 import type { DiscoveredModel, ProviderDraft, ProviderRow } from './modelProfile/types.js'
+import type { PluginRow } from './plugins/types.js'
 
 /** Which pane of the `/model` overlay is showing. */
 export type ModelProfileView = 'list' | 'form'
@@ -36,6 +37,7 @@ export type Overlay =
   | { readonly kind: 'modelProfile'; readonly modelProfile: ModelProfileOverlayState }
   | { readonly kind: 'trajectory' }
   | { readonly kind: 'context' }
+  | { readonly kind: 'plugins'; readonly rows: readonly PluginRow[] }
 
 /** Whole-log figures for the status bar's stats line; each side is `undefined` without its projection unit mounted. */
 export interface StatsSnapshot {
@@ -167,6 +169,11 @@ export class TuiStore {
   /** Open the `/context` usage overlay. */
   openContext(): void {
     this.set({ overlay: { kind: 'context' } })
+  }
+
+  /** Open the `/plugins` loaded-plugin-tree overlay with a snapshotted row list. */
+  openPlugins(rows: readonly PluginRow[]): void {
+    this.set({ overlay: { kind: 'plugins', rows } })
   }
 
   /** Close whichever overlay is open, restoring the normal prompt/status controls. */

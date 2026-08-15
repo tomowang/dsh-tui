@@ -21,6 +21,7 @@ import { PromptInput, bufferReducer, initialState, type TuiActions } from './Pro
 import { ModelProfileOverlay } from './modelProfile/ModelProfileOverlay.js'
 import { TrajectoryOverlay } from './trajectory/TrajectoryOverlay.js'
 import { ContextOverlay } from './context/ContextOverlay.js'
+import { PluginsOverlay } from './plugins/PluginsOverlay.js'
 import { buildBannerText } from './bannerText.js'
 import { buildStatsLine, buildContextLine } from './statsFormat.js'
 import { commandQuery } from './commands.js'
@@ -118,6 +119,9 @@ export function App({ store, actions, sessionId, provider, model, version, cwd, 
     if (state.overlay.kind === 'context') {
       return 7
     }
+    if (state.overlay.kind === 'plugins') {
+      return Math.max(10, rows - staticLines - 1)
+    }
     const noticeLines = state.notice === undefined ? 0 : state.notice.split('\n').length
     const queuedLines = state.queued.length
     const statusBarLines = 1
@@ -153,6 +157,8 @@ export function App({ store, actions, sessionId, provider, model, version, cwd, 
           <TrajectoryOverlay events={state.events} availableRows={dynamicLines} actions={actions} />
         ) : state.overlay.kind === 'context' ? (
           <ContextOverlay pressure={state.stats.contextPressure} breakdown={state.stats.contextBreakdown} actions={actions} />
+        ) : state.overlay.kind === 'plugins' ? (
+          <PluginsOverlay rows={state.overlay.rows} availableRows={dynamicLines} actions={actions} />
         ) : (
           <>
             {state.notice === undefined ? null : <Text>{state.notice}</Text>}

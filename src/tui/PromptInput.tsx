@@ -81,6 +81,11 @@ export interface TuiActions {
   openContext(): void
   /** Close the `/context` overlay. */
   closeContext(): void
+
+  /** Open the `/plugins` loaded-plugin-tree overlay. */
+  openPlugins(): void
+  /** Close the `/plugins` overlay. */
+  closePlugins(): void
 }
 
 export interface PromptInputProps {

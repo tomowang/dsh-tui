@@ -140,6 +140,15 @@ describe('TuiStore overlay state machine', () => {
     expect(store.getSnapshot().overlay).toEqual({ kind: 'context' })
   })
 
+  it('openPlugins opens the plugins overlay with the given rows', () => {
+    const store = new TuiStore({ events: [] })
+    const rows = [{ id: 'tui', name: '@tomowang/dsh-tui', disabled: false, group: false, state: 'active' as const }]
+
+    store.openPlugins(rows)
+
+    expect(store.getSnapshot().overlay).toEqual({ kind: 'plugins', rows })
+  })
+
   it('updateModelProfile is a no-op while the overlay is closed', () => {
     const store = new TuiStore({ events: [] })
     const listener = vi.fn()
