@@ -10,6 +10,7 @@ function stubActions(): TuiActions {
     status: vi.fn(),
     clear: vi.fn(),
     cyclePermission: vi.fn(),
+    compact: vi.fn(),
     openModelProfile: vi.fn(),
     closeModelProfile: vi.fn(),
     backToProviderList: vi.fn(),
@@ -91,6 +92,13 @@ describe('runSlashCommand', () => {
     const actions = stubActions()
     runSlashCommand('/trajectory', actions)
     expect(actions.openTrajectory).toHaveBeenCalledTimes(1)
+    expect(totalCalls(actions)).toBe(1)
+  })
+
+  it('dispatches /compact to compact', () => {
+    const actions = stubActions()
+    runSlashCommand('/compact', actions)
+    expect(actions.compact).toHaveBeenCalledTimes(1)
     expect(totalCalls(actions)).toBe(1)
   })
 

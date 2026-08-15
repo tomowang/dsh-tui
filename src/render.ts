@@ -88,6 +88,12 @@ export function formatEvent(event: SessionEvent, _options: RenderOptions): strin
       }
       return undefined
     }
+    case 'compaction/summary': {
+      return `${cyan('⊙')} compacted ${event.data.shadowedSeqs.length} items (~${event.data.shadowedTokenCount} tokens)`
+    }
+    case 'compaction/end': {
+      return event.data.error === undefined ? undefined : `${red('✖')} compaction: ${event.data.error}`
+    }
     default:
       // Merge-extensible union: events this viewer does not present fall through.
       return undefined

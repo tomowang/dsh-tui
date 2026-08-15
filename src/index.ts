@@ -19,6 +19,8 @@ import z from '@deepseek-ai/schemastery'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
 import type { Agent, ModelSelectionRef } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
+import { ManualCompactionError } from '@deepseek-ai/dsh-compaction'
+import type { ManualCompactionErrorCode } from '@deepseek-ai/dsh-compaction'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
@@ -73,6 +75,16 @@ function deriveApiKeyRef(route: string): string {
   const upper = route.toUpperCase().replace(/[^A-Z0-9]+/g, '_')
   const identifier = /^[A-Z_]/.test(upper) ? upper : `P_${upper}`
   return `${identifier}_API_KEY`
+}
+
+/** Short, user-facing text for each `ManualCompactionError` code, mirroring the harness's `command-compact` plugin. */
+const COMPACTION_ERROR_MESSAGES: Record<ManualCompactionErrorCode, string> = {
+  busy: 'compaction is unavailable while another compaction is running, or the agent is not idle',
+  cancelled: 'compaction cancelled',
+  changed: 'the selected history changed before it could be replaced; the conversation is unchanged',
+  summary: 'compaction could not produce a useful summary; the conversation is unchanged',
+  commit: 'compaction did not finish cleanly; some session history may have changed',
+  persistence: 'compaction finished, but the session could not be saved',
 }
 
 /** Plugin config: startup values resolved from this app's provider service. */
@@ -140,6 +152,10 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
   // registry (or without dsh-tui's own session-stats/token-meter rows) just
   // shows no stats line instead of the TUI refusing to start.
   const sessionProjections = ctx.get('sessionProjections')
+  // Same optional-service pattern: a profile without a mounted compaction
+  // engine just tells the reader /compact is unavailable instead of
+  // refusing to start.
+  const compaction = ctx.get('compaction')
 
   /** Guard for the three optional model-profile services, together or not at all. Re-resolved on every call, not cached: a profile that mounts these after startup should still be picked up. */
   function requireModelProfileServices() {
@@ -386,6 +402,9 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
       }))
     }
 
+    // Local re-entrancy guard for `/compact`; a fresh session from `/clear` gets a fresh one.
+    let compacting = false
+
     const actions: TuiActions = {
       send(text) {
         store.setNotice(undefined)
@@ -419,6 +438,29 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
         const index = names.indexOf(permissionPresets.current(agent.session.events))
         // -1 (the `custom` state) + 1 = 0, so an unmatched current value lands on the first preset.
         permissionPresets.set(agent.session, names[(index + 1) % names.length])
+      },
+      compact() {
+        if (compaction === undefined) {
+          store.setNotice('compaction is not available in this profile')
+          return
+        }
+        if (compacting) {
+          store.setNotice('compaction is already running')
+          return
+        }
+        compacting = true
+        store.setNotice('compacting…')
+        void compaction.compactNow(agent, new AbortController().signal)
+          .then(result => {
+            store.setNotice(result === null ? 'no compactable history yet' : undefined)
+          })
+          .catch((error: unknown) => {
+            const message = error instanceof ManualCompactionError
+              ? COMPACTION_ERROR_MESSAGES[error.code]
+              : error instanceof Error ? error.message : String(error)
+            store.setNotice(`compaction failed: ${message}`)
+          })
+          .finally(() => { compacting = false })
       },
 
       openModelProfile() {

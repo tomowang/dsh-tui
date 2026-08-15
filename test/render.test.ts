@@ -176,6 +176,30 @@ describe('formatEvent — turn/end', () => {
   })
 })
 
+describe('formatEvent — compaction/summary', () => {
+  it('reports the shadowed item and token counts', () => {
+    const line = formatEvent(
+      event('compaction/summary', { shadowedSeqs: [1, 2, 3], shadowedTokenCount: 456 }),
+      { replay: false },
+    )
+    expect(line).toContain('3 items')
+    expect(line).toContain('456 tokens')
+  })
+})
+
+describe('formatEvent — compaction/end', () => {
+  it('renders nothing on a clean end', () => {
+    const line = formatEvent(event('compaction/end', {}), { replay: false })
+    expect(line).toBeUndefined()
+  })
+
+  it('renders the error when compaction did not finish cleanly', () => {
+    const line = formatEvent(event('compaction/end', { error: 'commit failed' }), { replay: false })
+    expect(line).toContain('compaction')
+    expect(line).toContain('commit failed')
+  })
+})
+
 describe('formatEvent — unhandled types', () => {
   it('falls through to undefined for a merge-extensible type this viewer does not present', () => {
     const line = formatEvent(event('todo/write', { todos: [] }), { replay: false })

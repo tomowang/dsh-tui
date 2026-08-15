@@ -15,6 +15,7 @@ export interface SlashCommand {
 export const SLASH_COMMANDS: readonly SlashCommand[] = [
   { command: '/model', description: 'Manage LLM provider profiles' },
   { command: '/trajectory', description: 'Browse the turn/step event ledger' },
+  { command: '/compact', description: 'Summarize and compact session history' },
   { command: '/status', description: 'Show session status' },
   { command: '/clear', description: 'Clear the screen and start a new session' },
   { command: '/exit', description: 'Exit dsh-tui' },
@@ -53,6 +54,9 @@ export function runSlashCommand(command: string, actions: TuiActions): void {
       return
     case '/trajectory':
       actions.openTrajectory()
+      return
+    case '/compact':
+      actions.compact()
       return
   }
 }

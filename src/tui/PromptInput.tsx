@@ -46,6 +46,8 @@ export interface TuiActions {
   clear(): void
   /** Switch to the next permission preset (read-only/workspace-write/full-access), wrapping around. */
   cyclePermission(): void
+  /** Manually trigger session-history compaction via `ctx.compaction`. */
+  compact(): void
 
   /** Open the `/model` provider-profile overlay and start loading providers. */
   openModelProfile(): void
