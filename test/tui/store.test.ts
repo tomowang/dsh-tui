@@ -95,7 +95,7 @@ describe('TuiStore setters without an equality guard', () => {
 
   it('setStats updates the field and notifies', () => {
     const store = new TuiStore({ events: [] })
-    const stats = { sessionStats: undefined, tokenUsage: undefined }
+    const stats = { sessionStats: undefined, tokenUsage: undefined, contextPressure: undefined, contextBreakdown: undefined }
     store.setStats(stats)
     expect(store.getSnapshot().stats).toBe(stats)
   })
@@ -132,6 +132,12 @@ describe('TuiStore overlay state machine', () => {
     store.openModelProfile()
     store.closeOverlay()
     expect(store.getSnapshot().overlay).toEqual({ kind: 'none' })
+  })
+
+  it('openContext opens the context overlay', () => {
+    const store = new TuiStore({ events: [] })
+    store.openContext()
+    expect(store.getSnapshot().overlay).toEqual({ kind: 'context' })
   })
 
   it('updateModelProfile is a no-op while the overlay is closed', () => {

@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionStatsProjection } from '@deepseek-ai/dsh-session-stats'
-import type { TokenUsageProjection } from '@deepseek-ai/dsh-token-meter'
+import type { ContextBreakdownProjection, ContextPressureProjection, TokenUsageProjection } from '@deepseek-ai/dsh-token-meter'
 import {
   billedInputTokens,
+  buildContextLine,
   buildStatsLine,
   cacheHitPercent,
+  contextBreakdownRows,
+  contextOccupancy,
   formatDuration,
   formatTokens,
   formatTokensPerSecond,
@@ -140,5 +143,74 @@ describe('buildStatsLine', () => {
     expect(line).toContain('Cache hit 80%')
     expect(line).toContain('Input 10K tok · Output 412 tok')
     expect(line.split('| ').length).toBeGreaterThan(1)
+  })
+})
+
+function pressure(partial: Partial<ContextPressureProjection>): ContextPressureProjection {
+  return { ...partial }
+}
+
+function breakdown(partial: Partial<ContextBreakdownProjection>): ContextBreakdownProjection {
+  return { systemTokens: 0, toolsTokens: 0, messageTokens: 0, ...partial }
+}
+
+describe('contextOccupancy', () => {
+  it('is null without a usage sample', () => {
+    expect(contextOccupancy(undefined)).toBeNull()
+    expect(contextOccupancy(pressure({ contextWindow: 1_000_000 }))).toBeNull()
+  })
+
+  it('is null without a known context window', () => {
+    expect(contextOccupancy(pressure({ pressureTokens: 500 }))).toBeNull()
+  })
+
+  it('prefers projectedTokens over pressureTokens', () => {
+    const occupancy = contextOccupancy(pressure({ pressureTokens: 100, projectedTokens: 8100, contextWindow: 1_000_000 }))
+    expect(occupancy).toEqual({ percent: 1, usedTokens: 8100, contextWindow: 1_000_000 })
+  })
+
+  it('falls back to pressureTokens without a projected sample', () => {
+    const occupancy = contextOccupancy(pressure({ pressureTokens: 500_000, contextWindow: 1_000_000 }))
+    expect(occupancy).toEqual({ percent: 50, usedTokens: 500_000, contextWindow: 1_000_000 })
+  })
+
+  it('clamps at 100 percent', () => {
+    const occupancy = contextOccupancy(pressure({ projectedTokens: 2_000_000, contextWindow: 1_000_000 }))
+    expect(occupancy?.percent).toBe(100)
+  })
+})
+
+describe('buildContextLine', () => {
+  it('renders nothing without a usage sample', () => {
+    expect(buildContextLine(undefined)).toBe('')
+  })
+
+  it('renders percent and compact used/window tokens', () => {
+    const line = buildContextLine(pressure({ projectedTokens: 8100, contextWindow: 1_000_000 }))
+    expect(line).toBe('Context 1% · ~8.1K / 1M tok')
+  })
+})
+
+describe('contextBreakdownRows', () => {
+  it('is empty without occupancy', () => {
+    expect(contextBreakdownRows(null, breakdown({ systemTokens: 1 }))).toEqual([])
+  })
+
+  it('is empty without a breakdown', () => {
+    expect(contextBreakdownRows(contextOccupancy(pressure({ pressureTokens: 100, contextWindow: 1000 })), undefined)).toEqual([])
+  })
+
+  it('is empty when the breakdown total is 0', () => {
+    const occupancy = contextOccupancy(pressure({ pressureTokens: 100, contextWindow: 1000 }))
+    expect(contextBreakdownRows(occupancy, breakdown({}))).toEqual([])
+  })
+
+  it('scales segment widths to occupancy.percent, not the breakdown sum', () => {
+    const occupancy = contextOccupancy(pressure({ pressureTokens: 100, contextWindow: 1000 })) // 10%
+    const rows = contextBreakdownRows(occupancy, breakdown({ systemTokens: 100, toolsTokens: 660, messageTokens: 60 }))
+    expect(rows.map(r => r.label)).toEqual(['System prompt', 'Tools', 'Messages'])
+    expect(rows.map(r => r.tokens)).toEqual([100, 660, 60])
+    const totalWidth = rows.reduce((sum, r) => sum + r.width, 0)
+    expect(totalWidth).toBeCloseTo(occupancy!.percent, 5)
   })
 })

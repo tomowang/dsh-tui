@@ -10,7 +10,7 @@
 import type { AgentStatus } from '@deepseek-ai/dsh-agent'
 import type { SessionEvent, UserMessage } from '@deepseek-ai/dsh-session'
 import type { SessionStatsProjection } from '@deepseek-ai/dsh-session-stats'
-import type { TokenUsageProjection } from '@deepseek-ai/dsh-token-meter'
+import type { ContextBreakdownProjection, ContextPressureProjection, TokenUsageProjection } from '@deepseek-ai/dsh-token-meter'
 import type { DiscoveredModel, ProviderDraft, ProviderRow } from './modelProfile/types.js'
 
 /** Which pane of the `/model` overlay is showing. */
@@ -35,14 +35,22 @@ export type Overlay =
   | { readonly kind: 'none' }
   | { readonly kind: 'modelProfile'; readonly modelProfile: ModelProfileOverlayState }
   | { readonly kind: 'trajectory' }
+  | { readonly kind: 'context' }
 
 /** Whole-log figures for the status bar's stats line; each side is `undefined` without its projection unit mounted. */
 export interface StatsSnapshot {
   readonly sessionStats: SessionStatsProjection | undefined
   readonly tokenUsage: TokenUsageProjection | undefined
+  readonly contextPressure: ContextPressureProjection | undefined
+  readonly contextBreakdown: ContextBreakdownProjection | undefined
 }
 
-const EMPTY_STATS: StatsSnapshot = { sessionStats: undefined, tokenUsage: undefined }
+const EMPTY_STATS: StatsSnapshot = {
+  sessionStats: undefined,
+  tokenUsage: undefined,
+  contextPressure: undefined,
+  contextBreakdown: undefined,
+}
 
 /** The session's current permission preset, folded from `ctx.permissionPresets`. */
 export interface PermissionState {
@@ -154,6 +162,11 @@ export class TuiStore {
   /** Open the `/trajectory` ledger overlay. */
   openTrajectory(): void {
     this.set({ overlay: { kind: 'trajectory' } })
+  }
+
+  /** Open the `/context` usage overlay. */
+  openContext(): void {
+    this.set({ overlay: { kind: 'context' } })
   }
 
   /** Close whichever overlay is open, restoring the normal prompt/status controls. */

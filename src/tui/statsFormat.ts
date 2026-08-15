@@ -9,7 +9,7 @@
  */
 
 import type { SessionStatsProjection } from '@deepseek-ai/dsh-session-stats'
-import type { TokenUsageProjection } from '@deepseek-ai/dsh-token-meter'
+import type { ContextBreakdownProjection, ContextPressureProjection, TokenUsageProjection } from '@deepseek-ai/dsh-token-meter'
 
 /**
  * Compact token count: 517 / 12.2K / 517K / 1.2M (one decimal under three digits).
@@ -97,4 +97,73 @@ export function buildStatsLine(
     groups.push(`Input ${formatTokens(billedInputTokens(usage))} tok · Output ${formatTokens(usage.outputTokens)} tok`)
   }
   return groups.join('| ')
+}
+
+/** Approximate context occupancy, mirroring the web portal's `contextOccupancy`. */
+export interface ContextOccupancy {
+  /** Rounded percent of the context window in use, clamped to 100. */
+  readonly percent: number
+  /** `projectedTokens` when the provider has reported usage since the last surface change, else the last raw `pressureTokens` sample. */
+  readonly usedTokens: number
+  /** Newest recorded route capacity. */
+  readonly contextWindow: number
+}
+
+/**
+ * Derive occupancy from the newest pressure sample, or `null` while either
+ * side (a usage sample, a known route capacity) hasn't arrived yet.
+ * @param pressure - the session's context-pressure projection value.
+ * @returns occupancy figures, or `null` when there is nothing to show yet.
+ */
+export function contextOccupancy(pressure: ContextPressureProjection | undefined): ContextOccupancy | null {
+  const usedTokens = pressure?.projectedTokens ?? pressure?.pressureTokens
+  if (usedTokens === undefined || pressure?.contextWindow === undefined) return null
+  return {
+    percent: Math.min(100, Math.round(usedTokens / pressure.contextWindow * 100)),
+    usedTokens,
+    contextWindow: pressure.contextWindow,
+  }
+}
+
+/**
+ * Build the always-on compact context-usage line, e.g. `Context 1% · ~8.1K / 1M tok`.
+ * @param pressure - the session's context-pressure projection value.
+ * @returns the display line, or `''` when there is nothing to show yet.
+ */
+export function buildContextLine(pressure: ContextPressureProjection | undefined): string {
+  const occupancy = contextOccupancy(pressure)
+  if (occupancy === null) return ''
+  return `Context ${occupancy.percent}% · ~${formatTokens(occupancy.usedTokens)} / ${formatTokens(occupancy.contextWindow)} tok`
+}
+
+/** One row of the `/context` overlay's System/Tools/Messages breakdown. */
+export interface ContextBreakdownRow {
+  readonly label: string
+  readonly tokens: number
+  /** Bar-segment width in percentage points, scaled to `occupancy.percent` rather than the breakdown's own sum. */
+  readonly width: number
+}
+
+/**
+ * Proportional breakdown rows for the `/context` overlay's bar. The three
+ * heuristic figures are composition only — they do not sum to
+ * `occupancy.usedTokens` — so segment widths are scaled to `occupancy.percent`
+ * rather than treated as an independent total; see `ContextBreakdownProjection`'s doc comment.
+ * @param occupancy - this session's occupancy figures, or `null` without a usage sample yet.
+ * @param breakdown - the session's context-breakdown projection value.
+ * @returns the three rows in System/Tools/Messages order, or `[]` when there is nothing to show yet.
+ */
+export function contextBreakdownRows(
+  occupancy: ContextOccupancy | null,
+  breakdown: ContextBreakdownProjection | undefined,
+): readonly ContextBreakdownRow[] {
+  if (occupancy === null || breakdown === undefined) return []
+  const total = breakdown.systemTokens + breakdown.toolsTokens + breakdown.messageTokens
+  if (total === 0) return []
+  const scale = (tokens: number): number => occupancy.percent * tokens / total
+  return [
+    { label: 'System prompt', tokens: breakdown.systemTokens, width: scale(breakdown.systemTokens) },
+    { label: 'Tools', tokens: breakdown.toolsTokens, width: scale(breakdown.toolsTokens) },
+    { label: 'Messages', tokens: breakdown.messageTokens, width: scale(breakdown.messageTokens) },
+  ]
 }

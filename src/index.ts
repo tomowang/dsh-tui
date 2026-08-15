@@ -174,9 +174,16 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
 
   /** The session's current stats-line figures, or empty sides without a mounted registry/unit. */
   function statsSnapshot(session: Session): StatsSnapshot {
-    if (sessionProjections === undefined) return { sessionStats: undefined, tokenUsage: undefined }
+    if (sessionProjections === undefined) {
+      return { sessionStats: undefined, tokenUsage: undefined, contextPressure: undefined, contextBreakdown: undefined }
+    }
     const { values } = sessionProjections.snapshot(session)
-    return { sessionStats: values.sessionStats, tokenUsage: values.tokenUsage }
+    return {
+      sessionStats: values.sessionStats,
+      tokenUsage: values.tokenUsage,
+      contextPressure: values.contextPressure,
+      contextBreakdown: values.contextBreakdown,
+    }
   }
 
   /** The open `/model` overlay's sub-state, or `undefined` while it's closed. */
@@ -397,7 +404,7 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
     if (sessionProjections !== undefined) {
       unsubscribers.push(sessionProjections.onChanged((session, key) => {
         if (session !== agent.session) return
-        if (key !== 'sessionStats' && key !== 'tokenUsage') return
+        if (key !== 'sessionStats' && key !== 'tokenUsage' && key !== 'contextPressure' && key !== 'contextBreakdown') return
         store.setStats(statsSnapshot(agent.session))
       }))
     }
@@ -536,6 +543,13 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
         store.openTrajectory()
       },
       closeTrajectory() {
+        store.closeOverlay()
+      },
+
+      openContext() {
+        store.openContext()
+      },
+      closeContext() {
         store.closeOverlay()
       },
     }

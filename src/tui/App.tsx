@@ -14,13 +14,15 @@ import { Banner } from './Banner.js'
 import { EventLine } from './EventLine.js'
 import { StatusBar } from './StatusBar.js'
 import { StatsLine } from './StatsLine.js'
+import { ContextLine } from './ContextLine.js'
 import { QueuedIndicator } from './QueuedIndicator.js'
 import { PermissionIndicator } from './PermissionIndicator.js'
 import { PromptInput, bufferReducer, initialState, type TuiActions } from './PromptInput.js'
 import { ModelProfileOverlay } from './modelProfile/ModelProfileOverlay.js'
 import { TrajectoryOverlay } from './trajectory/TrajectoryOverlay.js'
+import { ContextOverlay } from './context/ContextOverlay.js'
 import { buildBannerText } from './bannerText.js'
-import { buildStatsLine } from './statsFormat.js'
+import { buildStatsLine, buildContextLine } from './statsFormat.js'
 import { commandQuery } from './commands.js'
 import { formatEvent } from '../render.js'
 
@@ -92,6 +94,11 @@ export function App({ store, actions, sessionId, provider, model, version, cwd, 
     [state.stats],
   )
 
+  const contextLine = useMemo(
+    () => buildContextLine(state.stats.contextPressure),
+    [state.stats],
+  )
+
   const dynamicLines = useMemo(() => {
     if (state.overlay.kind === 'modelProfile') {
       const mp = state.overlay.modelProfile
@@ -108,16 +115,20 @@ export function App({ store, actions, sessionId, provider, model, version, cwd, 
     if (state.overlay.kind === 'trajectory') {
       return Math.max(10, rows - staticLines - 1)
     }
+    if (state.overlay.kind === 'context') {
+      return 7
+    }
     const noticeLines = state.notice === undefined ? 0 : state.notice.split('\n').length
     const queuedLines = state.queued.length
     const statusBarLines = 1
     const statsLines = statsLine === '' ? 0 : 1
+    const contextLines = contextLine === '' ? 0 : 1
     // 2 accounts for the prompt box's top/bottom border; promptLineCount is
     // its content rows, which grow with a multi-line draft.
     const promptLines = 2 + promptLineCount + commandMatchesCount
     const permissionLines = state.permission === undefined ? 0 : 1
-    return noticeLines + queuedLines + statusBarLines + statsLines + promptLines + permissionLines
-  }, [state.overlay, state.notice, state.queued.length, commandMatchesCount, promptLineCount, state.permission, statsLine, rows, staticLines])
+    return noticeLines + queuedLines + statusBarLines + statsLines + contextLines + promptLines + permissionLines
+  }, [state.overlay, state.notice, state.queued.length, commandMatchesCount, promptLineCount, state.permission, statsLine, contextLine, rows, staticLines])
 
   // Ink appends a trailing newline to interactive frames (output + '\n'),
   // so we subtract 1 to ensure total rendered lines don't exceed terminal rows.
@@ -140,6 +151,8 @@ export function App({ store, actions, sessionId, provider, model, version, cwd, 
           <ModelProfileOverlay modelProfile={state.overlay.modelProfile} actions={actions} />
         ) : state.overlay.kind === 'trajectory' ? (
           <TrajectoryOverlay events={state.events} availableRows={dynamicLines} actions={actions} />
+        ) : state.overlay.kind === 'context' ? (
+          <ContextOverlay pressure={state.stats.contextPressure} breakdown={state.stats.contextBreakdown} actions={actions} />
         ) : (
           <>
             {state.notice === undefined ? null : <Text>{state.notice}</Text>}
@@ -160,6 +173,7 @@ export function App({ store, actions, sessionId, provider, model, version, cwd, 
             />
             <PermissionIndicator permission={state.permission} />
             <StatsLine line={statsLine} />
+            <ContextLine line={contextLine} />
           </>
         )}
       </Box>

@@ -74,6 +74,11 @@ export interface TuiActions {
   openTrajectory(): void
   /** Close the `/trajectory` overlay. */
   closeTrajectory(): void
+
+  /** Open the `/context` usage overlay. */
+  openContext(): void
+  /** Close the `/context` overlay. */
+  closeContext(): void
 }
 
 export interface PromptInputProps {
