@@ -4,7 +4,16 @@ An open-source terminal front door for [DeepSeek Harness](https://github.com/dee
 
 `@tomowang/dsh-tui` is an **out-of-tree mode bundle**: it stacks on `@deepseek-ai/dsh-base` exactly like the shipped `dsh-web-app` and `dsh-headless` bundles do, but drives the agent from your terminal instead of a browser. The package is both a Cordis plugin (terminal input and presentation) and a dsh bundle (`dsh.bundle.patch` in `package.json` points at [`cordis.patch.yml`](cordis.patch.yml)); everything else — model adapters, tools, session persistence, sandbox and approval policy — stays in `dsh-base` and remains patchable underneath.
 
-> Status: early scaffold. Built on React + Ink: settled session events print to native scrollback, a live status bar and prompt sit below. Full-screen differential rendering, streaming output, tool cards, and the `userInteraction` approval panel are on the roadmap below.
+![dsh-tui session in a terminal, showing the startup banner, injected context, and tool calls](assets/screenshot.png)
+
+<details>
+<summary>Screencast</summary>
+
+<video src="assets/screencast.mp4" controls width="100%"></video>
+
+If the player above doesn't render, watch/download it directly: [assets/screencast.mp4](assets/screencast.mp4)
+
+</details>
 
 ## How it works
 
@@ -12,6 +21,19 @@ An open-source terminal front door for [DeepSeek Harness](https://github.com/dee
 - Line input maps to the agent inbox: `agent.followup()` while idle, `agent.steer()` while a turn is running, `Ctrl+C` cancels the running turn.
 - `tui-startup` parses this app's flags (everything after the launcher's own) through `dsh-cmdline` and publishes them as an ordinary Cordis service; the runner row reads them via the bundle patch, mirroring `dsh-headless`.
 - Both stdin and stdout must be real TTYs; the plugin fails loud instead of degrading, so pipes keep using `dsh --profile headless`.
+
+## Features
+
+- **Status bar** — session id, active LLM provider/model, current agent preset, live run state with spinner, and queued-message count.
+- **Stats line** — turn/step counts, LLM/tool wall time, TTFT and decode tok/s, cache-hit %, billed tokens, and a compact context-usage summary; sections hide themselves until there's data.
+- **`/model` provider management** — switch the active model, and add, edit, or delete custom LLM providers (route, base URL, API key, model discovery) without leaving the terminal.
+- **Agent presets** — start a fresh session on a given preset with `--agent-preset`, or browse and switch presets from `/presets` (fixed once the session's first turn has run).
+- **Session inspectors** — `/trajectory` for a turn/step event ledger with a detail view and filtering, `/context` for a context-window usage breakdown, `/plugins` for the loaded Cordis plugin tree and fiber state.
+- **Permission preset cycling** — `Shift+Tab` cycles `read-only` / `workspace-write` / `danger-full-access` / `custom`, shown live in the prompt area.
+- **Manual compaction** — `/compact` summarizes and compacts session history on demand.
+- **Persisted prompt history** — submitted lines are saved across processes and `/clear`, recalled with `↑`/`↓`.
+- **Readline-style input** — word/line motion, kill/yank-style deletes, multi-line drafts, and shell-like double-press `Ctrl+C`/`Ctrl+D` to exit.
+- Every overlay degrades to a plain notice instead of failing the whole TUI when its backing service isn't mounted in a given profile.
 
 ## Install
 
@@ -33,20 +55,41 @@ dsh plugin --profile tui add @tomowang/dsh-tui
 
 # 4. Run
 dsh --profile tui
-dsh --profile tui --resume <sessionId>   # reopen a persisted session
-dsh --profile tui --dump-config          # inspect the composed plugin tree
+dsh --profile tui --resume <sessionId>           # reopen a persisted session
+dsh --profile tui --agent-preset <presetId>      # start a fresh session on a given preset
+dsh --profile tui --dump-config                  # inspect the composed plugin tree
 ```
 
-Any row `--dump-config` prints — the model adapter, tool set, sandbox policy, this TUI's own config — can be overridden from the profile's `cordis.patch.yml` without touching this package.
+Any row `--dump-config` prints — the model adapter, tool set, sandbox policy, this TUI's own config — can be overridden from the profile's `cordis.patch.yml` without touching this package. `--agent-preset` is a `dsh`-launcher flag (parsed by `tui-startup`, not `--dump-config` above) that only applies to a fresh session; it's ignored together with `--resume`, and is a no-op with a startup notice on profiles that don't mount `dsh-agent-presets`.
 
 ## Terminal commands
 
 | Input | Effect |
 |---|---|
 | any text | follow-up while idle, steering while a turn runs |
+| `/model` | manage LLM provider profiles: switch model, add/edit/delete a custom provider |
+| `/presets` | view and switch agent presets (fixed once the session's first turn has run) |
+| `/trajectory` | browse the turn/step event ledger with a detail inspector and filter |
+| `/context` | show context-window usage as a bar-chart breakdown |
+| `/plugins` | show the loaded Cordis plugin tree and fiber state |
+| `/compact` | summarize and compact session history |
 | `/status` | session id, run state, logged event count |
+| `/clear` | flush the current session and start a new one |
 | `/exit`, `/quit` | cancel, wait for idle, flush the session, exit |
-| `Ctrl+C` | cancel the running turn; at idle, exit |
+
+### Keyboard shortcuts
+
+| Key | Effect |
+|---|---|
+| `Ctrl+C` | cancel a running turn; on an idle empty line, press twice within 2s to exit |
+| `Ctrl+D` | forward-delete; on an idle empty line, press twice within 2s to exit |
+| `Shift+Tab` | cycle the permission preset (`read-only` / `workspace-write` / `danger-full-access` / `custom`) |
+| `Tab` | in `/command` mode, autocomplete the highlighted command |
+| `↑` / `↓`, `Ctrl+P` / `Ctrl+N` | recall prompt history, or move within a multi-line draft |
+| `Shift+Enter`, `Alt+Enter`, trailing `\` + `Enter` | insert a newline instead of submitting |
+| `Home`/`Ctrl+A`, `End`/`Ctrl+E`, `Ctrl+B`/`Ctrl+F`/arrows | readline-style character and line motion |
+| `Alt+Left`/`Alt+Right`, `Ctrl+Left`/`Ctrl+Right` | move by word |
+| `Ctrl+K`/`Ctrl+U`, `Ctrl+W`/`Alt+Backspace`, `Alt+D` | kill to line end/start, kill word back/forward |
 
 ## Develop
 
@@ -63,16 +106,6 @@ To try a local checkout inside a profile, point the profile's dependency at this
 ### Releasing
 
 `CHANGELOG.md` and GitHub Release notes are generated from Conventional Commits via [git-cliff](https://git-cliff.org/). To cut a release: bump `version` in `package.json`, run `pnpm run changelog`, commit as `chore(release): vX.Y.Z`, then `git tag vX.Y.Z && git push && git push --tags`. The tag push triggers CI to build, create the GitHub Release, and publish to npm. See [AGENTS.md](AGENTS.md#releasing) for the full flow.
-
-## Roadmap
-
-- Streaming output from `assistant/chunk` instead of settled messages
-- Tool cards through each tool definition's `presentCall` / `presentResult`
-- `userInteraction` provider: approvals and model questions answered in-terminal
-- `/model` selector over the `ctx.llm` catalog
-- Full-screen differential rendering with terminal restoration on failure
-
-The removed first-party TUI (`@deepseek-ai/dsh-tui`, deleted from the harness repo in Aug 2026 but recoverable from its git history) solved most of these already and is the reference for this project's direction.
 
 ## License
 
