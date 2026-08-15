@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.1] - 2026-08-15
+
+### Bug Fixes
+
+- Mark dsh-base framework packages as peerDependencies
 ## [0.2.0] - 2026-08-15
 
 ### Bug Fixes
@@ -25,7 +30,6 @@ All notable changes to this project are documented in this file.
 - Persist prompt-line history across sessions
 - Add /plugins loaded-plugin-tree command
 - Add agent preset support (/presets, --agent-preset, status bar)
-
 ## [0.1.0] - 2026-08-15
 
 ### Bug Fixes
