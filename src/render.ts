@@ -40,9 +40,10 @@ function textOf(content: readonly ContentBlock[]): string {
  * skipped: the log's vocabulary is merge-extensible and a transcript viewer
  * must tolerate events from plugins it does not know.
  * @param event - the durable session event to project.
- * @param options - replay/live rendering context.
+ * @param _options - replay/live rendering context; reserved for a future
+ * replay-vs-live visual distinction (e.g. dimming), not consulted yet.
  */
-export function formatEvent(event: SessionEvent, options: RenderOptions): string | undefined {
+export function formatEvent(event: SessionEvent, _options: RenderOptions): string | undefined {
   switch (event.type) {
     case 'user/message': {
       const source = event.data.source

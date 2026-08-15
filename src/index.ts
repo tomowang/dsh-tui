@@ -322,6 +322,11 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
   async function attachSession(resumeId: string | undefined): Promise<CurrentSession> {
     const selection = defaultModel.currentSelection()
     const sessionId = SessionId(resumeId ?? `session-${randomUUID()}`)
+    // dsh-agent's own doc calls `dispose` a portable CAPABILITY meant to be
+    // handed to another owner (exactly what happens below, into
+    // `disposeAgent`) — detaching it from the result object is the intended
+    // usage, not an accidental `this` loss.
+    // eslint-disable-next-line @typescript-eslint/unbound-method
     const { agent, dispose } = await agents.create({
       sessionId,
       meta: { cwd: process.cwd() },

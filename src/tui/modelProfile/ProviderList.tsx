@@ -40,7 +40,7 @@ export function ProviderList({ modelProfile, actions }: ProviderListProps) {
       return
     }
     if (key.return) {
-      actions.editProvider(providers[selected]!.route)
+      actions.editProvider(providers[selected].route)
       return
     }
     if (input === 'a') {
@@ -48,7 +48,7 @@ export function ProviderList({ modelProfile, actions }: ProviderListProps) {
       return
     }
     if (input === 's') {
-      const row = providers[selected]!
+      const row = providers[selected]
       const model = row.models[0]
       if (model !== undefined) actions.setActiveModel(row.route, model.id)
       return
@@ -56,7 +56,7 @@ export function ProviderList({ modelProfile, actions }: ProviderListProps) {
     if (input === 'd') {
       if (confirmDelete === selected) {
         setConfirmDelete(undefined)
-        actions.deleteProvider(providers[selected]!)
+        actions.deleteProvider(providers[selected])
       } else {
         setConfirmDelete(selected)
       }

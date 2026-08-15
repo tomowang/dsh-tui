@@ -30,7 +30,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "lint": "eslint ."
   },
   "engines": {
     "node": "^22.19.0 || >=24.0.0"
@@ -61,9 +62,15 @@
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/cordis-plugin-loader": "^1.0.2",
+    "@deepseek-ai/dsh-brand": "^0.1.0-rc.6",
+    "@eslint/js": "^10.0.1",
     "@types/node": "^24.0.0",
     "@types/react": "^19.2.18",
+    "eslint": "^10.8.1",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.11.0",
     "typescript": "^5.6.0",
+    "typescript-eslint": "^8.67.0",
     "vitest": "^4.1.10"
   }
 }

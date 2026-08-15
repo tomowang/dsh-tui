@@ -20,6 +20,7 @@ const ESC = '\x1b['
 const dim = (s: string): string => `${ESC}2m${s}${ESC}0m`
 const bold = (s: string): string => `${ESC}1m${s}${ESC}0m`
 
+// eslint-disable-next-line no-control-regex -- \x1b deliberately matches the ANSI escape byte, not a typo.
 const ANSI_RE = /\x1b\[[0-9;?]*[a-zA-Z]/g
 const visibleWidth = (s: string): number => s.replace(ANSI_RE, '').length
 const padVisible = (s: string, width: number): string => s + ' '.repeat(Math.max(0, width - visibleWidth(s)))
