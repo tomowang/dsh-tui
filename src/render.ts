@@ -66,6 +66,18 @@ export function formatEvent(event: SessionEvent, options: RenderOptions): string
     case 'tool/call': {
       return `${cyan('⚙')} ${event.data.name} ${dim(truncate(event.data.arguments, 100))}`
     }
+    case 'tool/result': {
+      // `error` marks an internal/harness-level failure (distinct from
+      // `isError` on the block, which is the ordinary model-facing outcome).
+      if (event.data.error !== undefined) {
+        return `${red('✖')} ${event.data.error.code}: ${event.data.error.name}`
+      }
+      const [block] = event.data.message.content
+      const failed = block.isError === true
+      const icon = failed ? red('✖') : cyan('✓')
+      const text = truncate(textOf(block.content), 100)
+      return text === '' ? icon : `${icon} ${dim(text)}`
+    }
     case 'turn/end': {
       const reason = event.data.reason
       if (reason.kind === 'error') {
