@@ -124,19 +124,14 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
   await ctx.get('loader')?.await()
   const agentsMaybe = ctx.get('agents')
   const defaultModelMaybe = ctx.get('agentDefaultModel')
-  const sessions = ctx.get('sessions')
+  const sessionsMaybe = ctx.get('sessions')
   // Early process shutdown can dispose the tree while settlement is pending.
-  if (agentsMaybe === undefined || defaultModelMaybe === undefined || sessions === undefined) return
+  if (agentsMaybe === undefined || defaultModelMaybe === undefined || sessionsMaybe === undefined) return
   // Rebound so nested closures (attachSession, defined below) see the
   // narrowed non-undefined type — TS doesn't carry flow narrowing into them.
   const agents = agentsMaybe
   const defaultModel = defaultModelMaybe
-  // Not every profile mounts these — the `/model` overlay degrades to an error
-  // notice instead of the whole TUI refusing to start, so they stay outside
-  // `inject` and are re-checked at the point of use.
-  const settings = ctx.get('settings')
-  const credentials = ctx.get('credentials')
-  const llm = ctx.get('llm')
+  const sessions = sessionsMaybe
   // Same optional-service pattern: not every profile composes permission
   // presets, so the indicator/keybinding degrade instead of the TUI refusing
   // to start.
@@ -146,12 +141,13 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
   // shows no stats line instead of the TUI refusing to start.
   const sessionProjections = ctx.get('sessionProjections')
 
-  /** Guard for the three optional model-profile services, together or not at all. */
-  function requireModelProfileServices():
-    | { settings: NonNullable<typeof settings>; credentials: NonNullable<typeof credentials>; llm: NonNullable<typeof llm> }
-    | undefined {
-    if (settings === undefined || credentials === undefined || llm === undefined) return undefined
-    return { settings, credentials, llm }
+  /** Guard for the three optional model-profile services, together or not at all. Re-resolved on every call, not cached: a profile that mounts these after startup should still be picked up. */
+  function requireModelProfileServices() {
+    const settingsSvc = ctx.get('settings')
+    const credentialsSvc = ctx.get('credentials')
+    const llmSvc = ctx.get('llm')
+    if (settingsSvc === undefined || credentialsSvc === undefined || llmSvc === undefined) return undefined
+    return { settings: settingsSvc, credentials: credentialsSvc, llm: llmSvc }
   }
 
   /** The session's current permission preset, or `undefined` without a mounted service. */
@@ -231,6 +227,18 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
       current.store.updateModelProfile({ error: 'Route is required.' })
       return
     }
+    if (draft.isNew) {
+      // `deriveApiKeyRef` collapses separator characters, so distinct routes
+      // (`foo-bar`, `foo.bar`, `foo_bar`) can derive the same credential ref —
+      // block the save instead of letting one route's key silently overwrite
+      // another's.
+      const apiKeyRef = draft.apiKeyRef === '' ? deriveApiKeyRef(draft.route) : draft.apiKeyRef
+      const collision = currentModelProfile()?.providers?.find(row => row.route !== draft.route && row.apiKeyRef === apiKeyRef)
+      if (collision !== undefined) {
+        current.store.updateModelProfile({ error: `Route derives the same credential as "${collision.route}" — choose a more distinct route.` })
+        return
+      }
+    }
     current.store.updateModelProfile({ busy: true, error: undefined })
     try {
       const path = draft.isNew ? ['providers', draft.route.trim()] : [...draft.settingsPath]
@@ -252,18 +260,29 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
     }
   }
 
-  /** Unset a provider's credential, then its settings section, and reload the list. */
+  /**
+   * Unset a provider's settings section, then its credential, and reload the
+   * list. Settings is the conflict-checked write and the sole thing that can
+   * block the removal; credential cleanup is best-effort afterward, since a
+   * leftover unused credential is harmless while a provider left "configured"
+   * with its key already gone (the other ordering's failure mode) is not.
+   */
   async function removeProvider(row: ProviderRow): Promise<void> {
     const services = requireModelProfileServices()
     if (services === undefined) return
     current.store.updateModelProfile({ busy: true, error: undefined })
     try {
-      await services.credentials.unset(credentialRef(row.apiKeyRef))
       await services.settings.mutate(settingsNamespace(row.settingsNs), [{ op: 'unset', path: row.settingsPath }], row.revision)
-      await loadProviders()
     } catch (error) {
       current.store.updateModelProfile({ busy: false, error: error instanceof Error ? error.message : String(error) })
+      return
     }
+    try {
+      await services.credentials.unset(credentialRef(row.apiKeyRef))
+    } catch (error) {
+      current.store.setNotice(`provider removed, but its credential could not be cleared: ${error instanceof Error ? error.message : String(error)}`)
+    }
+    await loadProviders()
   }
 
   /** Probe a draft's endpoint (or its adapter's own catalog knowledge) for available models. */
@@ -494,7 +513,7 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
     current.closing = true
     current.agent.cancel({ kind: 'user' })
     await current.agent.whenIdle()
-    await sessions?.flush(current.agent.session)
+    await sessions.flush(current.agent.session)
     current.instance.unmount()
     io.exit(0)
   }
@@ -506,7 +525,7 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
     old.closing = true
     old.agent.cancel({ kind: 'user' })
     await old.agent.whenIdle()
-    await sessions?.flush(old.agent.session)
+    await sessions.flush(old.agent.session)
     await old.disposeAgent()
     for (const off of old.unsubscribers) off()
     old.instance.unmount()
@@ -533,16 +552,21 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
  * @param config - validated startup config.
  */
 export function apply(ctx: Context, config: Config): void {
-  if (!process.stdin.isTTY || !process.stdout.isTTY) {
-    throw new Error('dsh-tui: stdin and stdout must both be TTYs; use `dsh --profile headless` for pipes')
-  }
   // Read through the global service store, not the property proxy: appExit is
-  // an optional host value, never an injected dependency.
+  // an optional host value, never an injected dependency. Resolved first
+  // because every other failure path below (including the TTY check) reports
+  // through `io`, which needs `exit` to exist — this one case can't, so it
+  // stays a raw throw.
   const exit = ctx.get('appExit')
   if (exit === undefined) {
     throw new Error('dsh-tui: the launcher must provide ctx.appExit before the tree mounts')
   }
   const io: TuiIo = { write: chunk => internals.stdout.write(chunk), exit }
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    io.write('dsh-tui: stdin and stdout must both be TTYs; use `dsh --profile headless` for pipes\n')
+    io.exit(1)
+    return
+  }
   const mounted: { instance?: Instance } = {}
   void run(ctx, config, io, mounted).catch((error: unknown) => { fail(io, error, mounted.instance) })
 }
