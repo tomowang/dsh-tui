@@ -54,9 +54,15 @@ Any row `--dump-config` prints — the model adapter, tool set, sandbox policy, 
 pnpm install
 pnpm run build        # tsc → lib/
 pnpm run typecheck
+pnpm run lint
+pnpm run test
 ```
 
 To try a local checkout inside a profile, point the profile's dependency at this directory (`dsh plugin --profile tui add /path/to/dsh-tui`) and rebuild before each run — profiles load the built `lib/` under plain Node.
+
+### Releasing
+
+`CHANGELOG.md` and GitHub Release notes are generated from Conventional Commits via [git-cliff](https://git-cliff.org/). To cut a release: bump `version` in `package.json`, run `pnpm run changelog`, commit as `chore(release): vX.Y.Z`, then `git tag vX.Y.Z && git push && git push --tags`. The tag push triggers CI to build, create the GitHub Release, and publish to npm. See [AGENTS.md](AGENTS.md#releasing) for the full flow.
 
 ## Roadmap
 

@@ -15,9 +15,11 @@ This file provides guidance to coding agents when working with code in this repo
 pnpm install
 pnpm run build        # tsc -p tsconfig.json → lib/
 pnpm run typecheck     # tsc --noEmit
+pnpm run lint          # eslint .
+pnpm run test          # vitest run
 ```
 
-There is no lint script and no test suite in this package. To exercise it end-to-end, point a `dsh` profile's dependency at this checkout and rebuild before each run — profiles load the built `lib/` under plain Node, not `src/`:
+A Husky `pre-push` hook (`.husky/pre-push`, wired via the `prepare` script) runs lint, typecheck, test, and build before every push, so failures surface locally instead of in CI. To exercise the TUI end-to-end, point a `dsh` profile's dependency at this checkout and rebuild before each run — profiles load the built `lib/` under plain Node, not `src/`:
 
 ```sh
 dsh plugin --profile tui add /path/to/dsh-tui
@@ -48,3 +50,14 @@ Both stdin and stdout must be real TTYs — `apply()` in `src/index.ts` throws l
 ## Current status / roadmap
 
 Early scaffold: settled session events print to native scrollback; a live status bar and boxed prompt sit pinned to the terminal's bottom row. Not yet implemented (see README for details): streaming output from `assistant/chunk`, tool cards via `presentCall`/`presentResult`, an in-terminal `userInteraction` approval provider, and full-screen differential rendering with terminal restoration on failure. The removed first-party `@deepseek-ai/dsh-tui` (deleted from the harness repo, recoverable from git history) is the reference for this direction.
+
+## Releasing
+
+Changelog and GitHub Release notes are generated from [Conventional Commits](https://www.conventionalcommits.org/) via [git-cliff](https://git-cliff.org/) (`cliff.toml`). To cut a release:
+
+1. Bump `version` in `package.json` (e.g. `npm version --no-git-tag-version <patch|minor|major>`).
+2. `pnpm run changelog` — regenerates `CHANGELOG.md`, folding commits since the last tag into a new `vX.Y.Z` section.
+3. Review the diff, then `git add package.json CHANGELOG.md && git commit -m "chore(release): vX.Y.Z"`.
+4. `git tag vX.Y.Z && git push && git push --tags`.
+
+Pushing the tag triggers `.github/workflows/release.yml`, which re-verifies the build, checks the tag matches `package.json`'s version, cuts a GitHub Release from `CHANGELOG.md`'s latest section, and publishes to npm using the `NPM_TOKEN` repo secret.
