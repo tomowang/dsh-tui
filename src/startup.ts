@@ -22,6 +22,8 @@ export const TUI_STARTUP_SERVICE = 'tuiStartup'
 export interface TuiStartupValues {
   /** Session id to resume; `undefined` starts a fresh session. */
   resume: string | undefined
+  /** Agent preset id to compose a fresh session from; `undefined` uses the deployment's default. Ignored when resuming. */
+  agentPreset: string | undefined
 }
 
 /**
@@ -34,10 +36,12 @@ function tuiCommand(): Command {
     .description('Interactive terminal session over the dsh agent.')
     .helpOption('-h, --help', 'show this help')
     .option('--resume <sessionId>', 'resume a persisted session by id')
+    .option('--agent-preset <id>', 'select an agent preset for a fresh session (e.g. standard, code, minimal, cordis)')
     .addHelpText('after', `
 Examples:
   dsh --profile tui                          start a fresh interactive session
   dsh --profile tui --resume <sessionId>     reopen a persisted session
+  dsh --profile tui --agent-preset code      start a fresh session on the "code" preset
 `)
 }
 
@@ -50,8 +54,8 @@ Examples:
 export function apply(ctx: Context): void {
   const program = tuiCommand()
   program.action(() => {
-    const options = program.opts<{ resume?: string }>()
-    ctx.provide(TUI_STARTUP_SERVICE, { resume: options.resume } satisfies TuiStartupValues)
+    const options = program.opts<{ resume?: string; agentPreset?: string }>()
+    ctx.provide(TUI_STARTUP_SERVICE, { resume: options.resume, agentPreset: options.agentPreset } satisfies TuiStartupValues)
   })
   parseCmdline(ctx, program)
 }

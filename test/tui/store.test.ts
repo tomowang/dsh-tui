@@ -99,6 +99,12 @@ describe('TuiStore setters without an equality guard', () => {
     store.setStats(stats)
     expect(store.getSnapshot().stats).toBe(stats)
   })
+
+  it('setPreset updates the field and notifies', () => {
+    const store = new TuiStore({ events: [] })
+    store.setPreset({ current: 'Code mode', blank: true })
+    expect(store.getSnapshot().preset).toEqual({ current: 'Code mode', blank: true })
+  })
 })
 
 describe('TuiStore.subscribe', () => {
@@ -147,6 +153,56 @@ describe('TuiStore overlay state machine', () => {
     store.openPlugins(rows)
 
     expect(store.getSnapshot().overlay).toEqual({ kind: 'plugins', rows })
+  })
+
+  it('openAgentPresets opens a loading roster seeded with the session state', () => {
+    const store = new TuiStore({ events: [] })
+    store.openAgentPresets({ current: 'standard', blank: true })
+    const overlay = store.getSnapshot().overlay
+    expect(overlay.kind).toBe('agentPresets')
+    if (overlay.kind === 'agentPresets') {
+      expect(overlay.agentPresets).toEqual({ rows: [], selected: 0, current: 'standard', blank: true, busy: true, error: undefined })
+    }
+  })
+
+  it('updateAgentPresets is a no-op while the overlay is closed', () => {
+    const store = new TuiStore({ events: [] })
+    const listener = vi.fn()
+    store.subscribe(listener)
+    const before = store.getSnapshot()
+
+    store.updateAgentPresets({ busy: false })
+
+    expect(store.getSnapshot()).toBe(before)
+    expect(listener).not.toHaveBeenCalled()
+  })
+
+  it('updateAgentPresets merges a patch onto the open overlay', () => {
+    const store = new TuiStore({ events: [] })
+    store.openAgentPresets({ current: undefined, blank: true })
+    const rows = [{ id: 'standard', label: 'Standard mode', description: undefined, trust: 'system' as const, broken: undefined }]
+
+    store.updateAgentPresets({ rows, busy: false })
+
+    const overlay = store.getSnapshot().overlay
+    expect(overlay.kind).toBe('agentPresets')
+    if (overlay.kind === 'agentPresets') {
+      expect(overlay.agentPresets.rows).toBe(rows)
+      expect(overlay.agentPresets.busy).toBe(false)
+      // Untouched fields survive the merge.
+      expect(overlay.agentPresets.blank).toBe(true)
+    }
+  })
+
+  it('selectAgentPresetRow moves the overlay cursor', () => {
+    const store = new TuiStore({ events: [] })
+    store.openAgentPresets({ current: undefined, blank: true })
+
+    store.selectAgentPresetRow(2)
+
+    const overlay = store.getSnapshot().overlay
+    expect(overlay.kind).toBe('agentPresets')
+    if (overlay.kind === 'agentPresets') expect(overlay.agentPresets.selected).toBe(2)
   })
 
   it('updateModelProfile is a no-op while the overlay is closed', () => {

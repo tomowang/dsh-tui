@@ -21,6 +21,7 @@ import { ModelProfileOverlay } from './modelProfile/ModelProfileOverlay.js'
 import { TrajectoryOverlay } from './trajectory/TrajectoryOverlay.js'
 import { ContextOverlay } from './context/ContextOverlay.js'
 import { PluginsOverlay } from './plugins/PluginsOverlay.js'
+import { AgentPresetsOverlay } from './agentPresets/AgentPresetsOverlay.js'
 import { buildBannerText } from './bannerText.js'
 import { buildStatsLine, buildContextLine } from './statsFormat.js'
 import { commandQuery } from './commands.js'
@@ -117,6 +118,9 @@ export function App({ store, actions, sessionId, provider, model, version, cwd, 
     if (state.overlay.kind === 'plugins') {
       return Math.max(10, rows - staticLines - 1)
     }
+    if (state.overlay.kind === 'agentPresets') {
+      return Math.max(10, rows - staticLines - 1)
+    }
     const noticeLines = state.notice === undefined ? 0 : state.notice.split('\n').length
     const queuedLines = state.queued.length
     const statusBarLines = 1
@@ -153,6 +157,8 @@ export function App({ store, actions, sessionId, provider, model, version, cwd, 
           <ContextOverlay pressure={state.stats.contextPressure} breakdown={state.stats.contextBreakdown} actions={actions} />
         ) : state.overlay.kind === 'plugins' ? (
           <PluginsOverlay rows={state.overlay.rows} availableRows={dynamicLines} actions={actions} />
+        ) : state.overlay.kind === 'agentPresets' ? (
+          <AgentPresetsOverlay agentPresets={state.overlay.agentPresets} actions={actions} />
         ) : (
           <>
             {state.notice === undefined ? null : <Text>{state.notice}</Text>}
@@ -163,6 +169,7 @@ export function App({ store, actions, sessionId, provider, model, version, cwd, 
               model={model}
               status={state.status}
               queuedCount={state.queued.length}
+              presetLabel={state.preset?.current}
             />
             <PromptInput
               status={state.status}

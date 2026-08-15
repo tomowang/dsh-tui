@@ -24,6 +24,7 @@
       inject: [tuiStartup]
       config:
         resume: !!js ctx.tuiStartup.resume
+        agentPreset: !!js ctx.tuiStartup.agentPreset
 
     # Whole-log turn/step counts for the status bar's stats line (the
     # sessionStats projection key); dsh-base mounts the registry itself but
@@ -32,3 +33,14 @@
     # insertion order.
     - id: session-stats
       name: '@deepseek-ai/dsh-session-stats'
+
+    # Preset roster and mid-session preset switching for `/presets` and
+    # `--agent-preset`. dsh-base doesn't mount this row (only dsh-web-app's
+    # bundle does); the deepseek-harness CLI's own profile-boot patches
+    # shipped preset roots onto any `agent-presets` row regardless of which
+    # layer inserted it, so mounting a bare copy (with a required `default`)
+    # here is enough to pick up the standard/code/minimal/cordis roster.
+    - id: agent-presets
+      name: '@deepseek-ai/dsh-agent-presets'
+      config:
+        default: standard

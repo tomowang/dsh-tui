@@ -13,6 +13,7 @@ import type { SessionStatsProjection } from '@deepseek-ai/dsh-session-stats'
 import type { ContextBreakdownProjection, ContextPressureProjection, TokenUsageProjection } from '@deepseek-ai/dsh-token-meter'
 import type { DiscoveredModel, ProviderDraft, ProviderRow } from './modelProfile/types.js'
 import type { PluginRow } from './plugins/types.js'
+import type { AgentPresetRow } from './agentPresets/types.js'
 
 /** Which pane of the `/model` overlay is showing. */
 export type ModelProfileView = 'list' | 'form'
@@ -31,6 +32,19 @@ export interface ModelProfileOverlayState {
   readonly error: string | undefined
 }
 
+/** Overlay-owned state for the `/presets` agent-preset screen. */
+export interface AgentPresetsOverlayState {
+  /** Joined preset roster; empty while the first load is still in flight (see `busy`). */
+  readonly rows: readonly AgentPresetRow[]
+  readonly selected: number
+  /** The session's currently resolved preset id, or `undefined` without a mounted service. */
+  readonly current: string | undefined
+  /** Whether the session has run no turn yet — the only state a preset switch is accepted in. */
+  readonly blank: boolean
+  readonly busy: boolean
+  readonly error: string | undefined
+}
+
 /** Full-screen overlay replacing the live region's normal controls. */
 export type Overlay =
   | { readonly kind: 'none' }
@@ -38,6 +52,7 @@ export type Overlay =
   | { readonly kind: 'trajectory' }
   | { readonly kind: 'context' }
   | { readonly kind: 'plugins'; readonly rows: readonly PluginRow[] }
+  | { readonly kind: 'agentPresets'; readonly agentPresets: AgentPresetsOverlayState }
 
 /** Whole-log figures for the status bar's stats line; each side is `undefined` without its projection unit mounted. */
 export interface StatsSnapshot {
@@ -62,6 +77,14 @@ export interface PermissionState {
   readonly names: readonly string[]
 }
 
+/** The session's current agent preset, folded from `ctx.agentPresets`. */
+export interface PresetState {
+  /** Display label of the resolved preset, or `undefined` when the deployment composes none. */
+  readonly current: string | undefined
+  /** Whether the session has run no turn yet — the only state a preset switch is accepted in. */
+  readonly blank: boolean
+}
+
 /** One immutable snapshot of everything the TUI renders. */
 export interface TuiState {
   /** Session log so far, in append order. */
@@ -80,6 +103,8 @@ export interface TuiState {
   readonly permission: PermissionState | undefined
   /** Whole-log stats-line figures, or `undefined` sides when `ctx.sessionProjections` isn't composed in this profile. */
   readonly stats: StatsSnapshot
+  /** Current agent preset, or `undefined` when `ctx.agentPresets` isn't composed in this profile. */
+  readonly preset: PresetState | undefined
 }
 
 const CLOSED_OVERLAY: Overlay = { kind: 'none' }
@@ -104,6 +129,7 @@ export class TuiStore {
       overlay: CLOSED_OVERLAY,
       permission: undefined,
       stats: EMPTY_STATS,
+      preset: undefined,
     }
   }
 
@@ -142,6 +168,10 @@ export class TuiStore {
     this.set({ stats })
   }
 
+  setPreset(preset: PresetState | undefined): void {
+    this.set({ preset })
+  }
+
   /** Open the `/model` overlay to a fresh, loading provider list. */
   openModelProfile(): void {
     this.set({
@@ -176,6 +206,16 @@ export class TuiStore {
     this.set({ overlay: { kind: 'plugins', rows } })
   }
 
+  /** Open the `/presets` overlay to a fresh, loading roster. */
+  openAgentPresets(init: { current: string | undefined; blank: boolean }): void {
+    this.set({
+      overlay: {
+        kind: 'agentPresets',
+        agentPresets: { rows: [], selected: 0, current: init.current, blank: init.blank, busy: true, error: undefined },
+      },
+    })
+  }
+
   /** Close whichever overlay is open, restoring the normal prompt/status controls. */
   closeOverlay(): void {
     this.set({ overlay: CLOSED_OVERLAY })
@@ -187,6 +227,19 @@ export class TuiStore {
     this.set({
       overlay: { kind: 'modelProfile', modelProfile: { ...this.state.overlay.modelProfile, ...patch } },
     })
+  }
+
+  /** Patch the open `/presets` overlay's sub-state; a no-op once it's closed. */
+  updateAgentPresets(patch: Partial<AgentPresetsOverlayState>): void {
+    if (this.state.overlay.kind !== 'agentPresets') return
+    this.set({
+      overlay: { kind: 'agentPresets', agentPresets: { ...this.state.overlay.agentPresets, ...patch } },
+    })
+  }
+
+  /** Move the `/presets` overlay's list cursor. */
+  selectAgentPresetRow(index: number): void {
+    this.updateAgentPresets({ selected: index })
   }
 
   private set(partial: Partial<TuiState>): void {

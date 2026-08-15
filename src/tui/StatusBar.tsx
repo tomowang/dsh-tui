@@ -14,13 +14,17 @@ export interface StatusBarProps {
   readonly model: string
   readonly status: AgentStatus
   readonly queuedCount: number
+  /** Current agent preset's display label, or `undefined` without a mounted preset service. */
+  readonly presetLabel: string | undefined
 }
 
-export function StatusBar({ sessionId, provider, model, status, queuedCount }: StatusBarProps) {
+export function StatusBar({ sessionId, provider, model, status, queuedCount, presetLabel }: StatusBarProps) {
   const queuedSuffix = queuedCount > 0 ? ` · ${queuedCount} queued` : ''
+  const presetSegment = presetLabel === undefined ? '' : ` · ${presetLabel}`
   return (
     <Text dimColor>
-      session {stripSessionIdPrefix(sessionId)} · {provider}/{model} · {status === 'running' ? <Spinner /> : null}{' '}
+      session {stripSessionIdPrefix(sessionId)} · {provider}/{model}
+      {presetSegment} · {status === 'running' ? <Spinner /> : null}{' '}
       {status}
       {queuedSuffix}
     </Text>

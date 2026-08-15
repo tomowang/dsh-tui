@@ -17,6 +17,7 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
   { command: '/trajectory', description: 'Browse the turn/step event ledger' },
   { command: '/context', description: 'Show context window usage' },
   { command: '/plugins', description: 'Show the loaded plugin tree' },
+  { command: '/presets', description: 'Show and switch agent presets (only while the session is blank)' },
   { command: '/compact', description: 'Summarize and compact session history' },
   { command: '/status', description: 'Show session status' },
   { command: '/clear', description: 'Clear the screen and start a new session' },
@@ -62,6 +63,9 @@ export function runSlashCommand(command: string, actions: TuiActions): void {
       return
     case '/plugins':
       actions.openPlugins()
+      return
+    case '/presets':
+      actions.openAgentPresets()
       return
     case '/compact':
       actions.compact()

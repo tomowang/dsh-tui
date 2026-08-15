@@ -86,6 +86,15 @@ export interface TuiActions {
   openPlugins(): void
   /** Close the `/plugins` overlay. */
   closePlugins(): void
+
+  /** Open the `/presets` agent-preset overlay and start loading the roster. */
+  openAgentPresets(): void
+  /** Close the `/presets` overlay. */
+  closeAgentPresets(): void
+  /** Move the `/presets` list's selection cursor. */
+  selectAgentPresetRow(index: number): void
+  /** Apply a different agent preset to the current (blank) session. */
+  applyAgentPreset(id: string): void
 }
 
 export interface PromptInputProps {

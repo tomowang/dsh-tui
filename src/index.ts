@@ -19,6 +19,10 @@ import z from '@deepseek-ai/schemastery'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
 import type { Agent, ModelSelectionRef } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
+// Real import so its `agent-preset/selected` SessionEventMap augmentation
+// (declared in the module's own session.ts) resolves alongside the value.
+import { resolveSessionPreset } from '@deepseek-ai/dsh-agent-presets'
+import type { AgentPreset } from '@deepseek-ai/dsh-agent-presets'
 import { ManualCompactionError } from '@deepseek-ai/dsh-compaction'
 import type { ManualCompactionErrorCode } from '@deepseek-ai/dsh-compaction'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
@@ -46,12 +50,13 @@ import type { Instance } from 'ink'
 
 import { ensureSessionIdPrefix, stripSessionIdPrefix } from './sessionId.js'
 import { TuiStore } from './tui/store.js'
-import type { ModelProfileOverlayState, PermissionState, StatsSnapshot } from './tui/store.js'
+import type { ModelProfileOverlayState, PermissionState, PresetState, StatsSnapshot } from './tui/store.js'
 import { mountTui } from './tui/mount.js'
 import type { TuiActions } from './tui/App.js'
 import { readPackageVersion } from './version.js'
 import type { ProviderDraft, ProviderRow, StoredProviderProfile } from './tui/modelProfile/types.js'
 import type { PluginRow } from './tui/plugins/types.js'
+import type { AgentPresetRow } from './tui/agentPresets/types.js'
 
 /** Stable Cordis plugin name. */
 export const name = 'tui'
@@ -111,14 +116,47 @@ const COMPACTION_ERROR_MESSAGES: Record<ManualCompactionErrorCode, string> = {
   persistence: 'compaction finished, but the session could not be saved',
 }
 
+/**
+ * English display names for the four shipped preset ids. The shipped
+ * `preset.yml` metadata is authored in Chinese and there's no server-side
+ * locale resolution — the web client's own EN/ZH table lives in a
+ * browser-only React package, so a plain fallback table is simplest here.
+ * Any other preset id (a locally authored one) falls back to its own `name`
+ * metadata, then its raw id.
+ */
+const BUILT_IN_PRESET_LABELS: Record<string, string> = {
+  standard: 'Standard mode',
+  code: 'Code mode',
+  minimal: 'Minimal mode',
+  cordis: 'Creator mode',
+}
+
+/** Display label for a bare preset id, without fetching its metadata. */
+function presetLabelForId(id: string): string {
+  return BUILT_IN_PRESET_LABELS[id] ?? id
+}
+
+/** Display label for a resolved preset row, preferring its own metadata over the raw id. */
+function presetRowLabel(preset: AgentPreset): string {
+  return BUILT_IN_PRESET_LABELS[preset.id] ?? preset.name ?? preset.id
+}
+
+/** Whether `session` has run no turn yet — the only state a preset switch is accepted in, mirroring the harness's own `sessionBlank`. */
+function sessionBlank(session: Session): boolean {
+  return !session.events.some(event => event.type === 'turn/start')
+}
+
 /** Plugin config: startup values resolved from this app's provider service. */
 export interface Config {
   /** Session id to resume; absent starts a fresh session. */
   resume?: string
+  /** Agent preset id to compose a fresh session from; absent uses the deployment's default. Ignored when resuming. */
+  agentPreset?: string
 }
 
 export const Config: z<Config> = z.object({
   resume: z.string(),
+  agentPreset: z.string(),
 })
 
 /** Process-facing effects of the interactive loop; tests substitute captures. */
@@ -180,6 +218,10 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
   // engine just tells the reader /compact is unavailable instead of
   // refusing to start.
   const compaction = ctx.get('compaction')
+  // Same optional-service pattern: a profile without a mounted agent-preset
+  // roster just shows no preset in the status bar and tells the reader
+  // /presets is unavailable instead of refusing to start.
+  const presets = ctx.get('agentPresets')
   // Same optional-service pattern: a profile without a mounted settings
   // service just keeps prompt history in memory for the process's lifetime
   // instead of refusing to start. Registration can also fail loud on an
@@ -236,6 +278,13 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
       contextPressure: values.contextPressure,
       contextBreakdown: values.contextBreakdown,
     }
+  }
+
+  /** The session's current agent preset, or `undefined` without a mounted service. */
+  function currentPresetState(session: Session): PresetState | undefined {
+    if (presets === undefined) return undefined
+    const id = resolveSessionPreset(session)
+    return { current: id === undefined ? undefined : presetLabelForId(id), blank: sessionBlank(session) }
   }
 
   /** Snapshot the loader's current entry tree into plain display rows, or `undefined` without a mounted loader. */
@@ -305,6 +354,24 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
       error: undefined,
       selected: Math.min(previousSelected, Math.max(0, rows.length - 1)),
     })
+  }
+
+  /** Fetch the deployment's preset roster and refresh the open `/presets` overlay's row list. */
+  async function loadAgentPresets(): Promise<void> {
+    if (presets === undefined) return
+    try {
+      const list = await presets.list()
+      const rows: AgentPresetRow[] = list.map(preset => ({
+        id: preset.id,
+        label: presetRowLabel(preset),
+        description: preset.description,
+        trust: preset.trust,
+        broken: preset.broken,
+      }))
+      current.store.updateAgentPresets({ rows, busy: false, error: undefined })
+    } catch (error) {
+      current.store.updateAgentPresets({ busy: false, error: error instanceof Error ? error.message : String(error) })
+    }
   }
 
   /** Write a draft's fields as path ops under its (or a new custom route's) settings path, then its API key. */
@@ -412,9 +479,30 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
   async function attachSession(resumeId: string | undefined): Promise<CurrentSession> {
     const selection = defaultModel.currentSelection()
     const agentOptions = { provider: selection.provider, model: selection.model }
-    const setup = (agentCtx: Context): void => {
+
+    // Only a fresh session adopts `config.agentPreset`/the deployment default —
+    // a resumed session's preset is whatever its persisted header (or a later
+    // `agent-preset/selected` event) already recorded, exactly like `--resume`
+    // already ignores model-selection flags in favor of the persisted state.
+    let resolvedPreset: AgentPreset | undefined
+    let presetNotice: string | undefined
+    if (resumeId === undefined) {
+      if (presets !== undefined) {
+        try {
+          resolvedPreset = await presets.resolve(config.agentPreset)
+        } catch (error) {
+          const named = config.agentPreset === undefined ? '' : `"${config.agentPreset}" `
+          presetNotice = `agent preset ${named}could not be resolved: ${error instanceof Error ? error.message : String(error)}`
+        }
+      } else if (config.agentPreset !== undefined) {
+        presetNotice = 'agent presets are not available in this profile; --agent-preset ignored'
+      }
+    }
+
+    const setup = async (agentCtx: Context): Promise<void> => {
       const selected: ModelSelectionRef = { current: selection, assembled: undefined }
       installModelSelection(agentCtx, selected)
+      if (presets !== undefined && resolvedPreset !== undefined) await presets.mount(agentCtx, resolvedPreset.id)
     }
     // dsh-agent's own doc calls `dispose` a portable CAPABILITY meant to be
     // handed to another owner (exactly what happens below, into
@@ -427,7 +515,12 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
       // so pointing it at an existing id (the old behavior here) built a
       // near-empty session that collided with the real log on first write.
       ? await agents.resume({ resumeSessionId: SessionId(ensureSessionIdPrefix(resumeId)), agentOptions, setup })
-      : await agents.create({ sessionId: SessionId(`session-${randomUUID()}`), meta: { cwd: process.cwd() }, agentOptions, setup })
+      : await agents.create({
+          sessionId: SessionId(`session-${randomUUID()}`),
+          meta: { cwd: process.cwd(), ...(resolvedPreset === undefined ? {} : { agentPreset: resolvedPreset.id }) },
+          agentOptions,
+          setup,
+        })
     await agent.whenIdle()
 
     // Seed the store from persisted history, then follow the same log live; the
@@ -438,6 +531,8 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
     store.setQueued([...agent.inbox.nextStep, ...agent.inbox.nextTurn])
     store.setPermission(permissionState(agent.session.events))
     store.setStats(statsSnapshot(agent.session))
+    store.setPreset(currentPresetState(agent.session))
+    if (presetNotice !== undefined) store.setNotice(presetNotice)
 
     const resnapshotQueue = (): void => {
       store.setQueued([...agent.inbox.nextStep, ...agent.inbox.nextTurn])
@@ -448,6 +543,9 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
         store.appendEvent(event)
         if (event.type === 'permission/preset' || event.type === 'sandbox/mode' || event.type === 'approval/policy') {
           store.setPermission(permissionState(agent.session.events))
+        }
+        if (event.type === 'agent-preset/selected') {
+          store.setPreset(currentPresetState(agent.session))
         }
       }),
       ctx.on('agent/status', (payload) => {
@@ -633,6 +731,38 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
       },
       closePlugins() {
         store.closeOverlay()
+      },
+
+      openAgentPresets() {
+        if (presets === undefined) {
+          store.setNotice('agent presets are not available in this profile')
+          return
+        }
+        store.openAgentPresets({ current: resolveSessionPreset(agent.session), blank: sessionBlank(agent.session) })
+        void loadAgentPresets()
+      },
+      closeAgentPresets() {
+        store.closeOverlay()
+      },
+      selectAgentPresetRow(index) {
+        store.selectAgentPresetRow(index)
+      },
+      applyAgentPreset(id) {
+        if (presets === undefined) return
+        if (!sessionBlank(agent.session)) {
+          store.setNotice('agent preset is fixed once a turn has run')
+          return
+        }
+        store.updateAgentPresets({ busy: true, error: undefined })
+        void presets.recompose(agent.ctx, id)
+          .then(preset => {
+            agent.session.append('agent-preset/selected', { agentPreset: preset.id })
+            store.setPreset(currentPresetState(agent.session))
+            store.closeOverlay()
+          })
+          .catch((error: unknown) => {
+            store.updateAgentPresets({ busy: false, error: error instanceof Error ? error.message : String(error) })
+          })
       },
     }
 

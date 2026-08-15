@@ -28,6 +28,10 @@ function stubActions(): TuiActions {
     closeContext: vi.fn(),
     openPlugins: vi.fn(),
     closePlugins: vi.fn(),
+    openAgentPresets: vi.fn(),
+    closeAgentPresets: vi.fn(),
+    selectAgentPresetRow: vi.fn(),
+    applyAgentPreset: vi.fn(),
   }
 }
 
@@ -111,6 +115,13 @@ describe('runSlashCommand', () => {
     const actions = stubActions()
     runSlashCommand('/plugins', actions)
     expect(actions.openPlugins).toHaveBeenCalledTimes(1)
+    expect(totalCalls(actions)).toBe(1)
+  })
+
+  it('dispatches /presets to openAgentPresets', () => {
+    const actions = stubActions()
+    runSlashCommand('/presets', actions)
+    expect(actions.openAgentPresets).toHaveBeenCalledTimes(1)
     expect(totalCalls(actions)).toBe(1)
   })
 
