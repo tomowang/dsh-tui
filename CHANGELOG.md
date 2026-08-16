@@ -2,6 +2,25 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.3.0] - 2026-08-16
+
+### Bug Fixes
+
+- Restore terminal state synchronously on crash exit
+
+### Documentation
+
+- Replace screenshot/mp4 screencast with inline gif
+- Document shell mode and @-file-mention autocomplete
+
+### Features
+
+- Stream assistant output live from assistant/chunk
+- Render tool cards via presentCall/presentResult
+- Answer approvals and ask_user_question in-terminal
+- Add shell mode via leading `!`
+- Add @-file-mention autocomplete to the prompt
+- Add /help command to show commands and shortcuts
 ## [0.2.1] - 2026-08-15
 
 ### Bug Fixes
