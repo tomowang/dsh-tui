@@ -183,6 +183,33 @@ function fail(io: TuiIo, error: unknown, instance: Instance | undefined): void {
   io.exit(1)
 }
 
+/**
+ * Synchronous, best-effort terminal restoration for a crash exit. Raw mode
+ * and cursor visibility are otherwise only unset by `PromptInput`'s
+ * `useInput` cleanup, which React defers to a microtask — fine on the
+ * graceful `shutdown()`/`clearSession()` paths, which await disposal before
+ * the process actually exits, but never runs from a `process.on('exit')`
+ * handler, which gets no further event-loop turn. Ink's own `signal-exit`
+ * hook (which calls this same `unmount()`) hits exactly that gap on a
+ * SIGTERM, a SIGINT that arrives before raw mode would otherwise suppress
+ * it, or an uncaught exception, leaving the reader's shell in raw mode with
+ * a hidden cursor. Registered once, directly, as the last line of defense.
+ */
+function restoreTerminal(): void {
+  if (process.stdin.isTTY) {
+    try {
+      process.stdin.setRawMode(false)
+    } catch {
+      // Already restored, or the stream is gone — the process is exiting either way.
+    }
+  }
+  try {
+    internals.stdout.write('\x1b[?25h')
+  } catch {
+    // stdout may already be closed on the way out.
+  }
+}
+
 /** Replace a leading home directory with `~`, matching common shell prompts. */
 function abbreviateHome(cwd: string): string {
   const home = homedir()
@@ -1063,6 +1090,7 @@ export function apply(ctx: Context, config: Config): void {
     io.exit(1)
     return
   }
+  process.once('exit', restoreTerminal)
   const mounted: { instance?: Instance } = {}
   void run(ctx, config, io, mounted).catch((error: unknown) => { fail(io, error, mounted.instance) })
 }
