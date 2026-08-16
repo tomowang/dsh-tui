@@ -10,6 +10,7 @@ import type { Instance } from 'ink'
 import { App } from './App.js'
 import type { TuiActions } from './App.js'
 import type { TuiStore } from './store.js'
+import type { RenderOptions } from '../render.js'
 
 export interface MountOptions {
   readonly store: TuiStore
@@ -23,6 +24,10 @@ export interface MountOptions {
   readonly stdin: NodeJS.ReadStream
   /** Submitted-line history for the prompt's up/down-arrow recall; owned outside the Ink tree so `/clear` can preserve it. */
   readonly promptHistory: string[]
+  /** Look up a tool's declared presentation, for `tool/call`/`tool/result` cards. */
+  readonly getTool: RenderOptions['getTool']
+  /** Look up a `tool/call`'s name/arguments by `callId`, for a `tool/result` to present with. */
+  readonly getToolCall: RenderOptions['getToolCall']
 }
 
 /**
@@ -43,6 +48,8 @@ export function mountTui(options: MountOptions): Instance {
       // `?? ` alone won't catch it: a size-less pty reports `0`, not `undefined`.
       columns={options.stdout.columns || 80}
       promptHistory={options.promptHistory}
+      getTool={options.getTool}
+      getToolCall={options.getToolCall}
     />,
     {
       stdout: options.stdout,

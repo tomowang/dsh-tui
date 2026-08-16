@@ -9,7 +9,7 @@
 
 import type { AgentStatus } from '@deepseek-ai/dsh-agent'
 import { BlockAssembler } from '@deepseek-ai/dsh-llm'
-import type { StreamChunk } from '@deepseek-ai/dsh-llm'
+import type { CallId, StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent, UserMessage } from '@deepseek-ai/dsh-session'
 import type { SessionStatsProjection } from '@deepseek-ai/dsh-session-stats'
 import type { ContextBreakdownProjection, ContextPressureProjection, TokenUsageProjection } from '@deepseek-ai/dsh-token-meter'
@@ -132,10 +132,17 @@ export class TuiStore {
   // rebuilt fresh whenever a chunk's `{turn, step}` doesn't match the last one.
   private streamingAssembler: BlockAssembler | undefined
   private streamingKey: { turn: number; step: number } | undefined
+  // Not part of TuiState either: a `tool/result` event carries no name/arguments
+  // of its own (only `message.source.callId`), so a later `presentResult` needs
+  // this O(1) lookup back to its `tool/call` rather than an O(n) history scan.
+  private readonly toolCalls = new Map<CallId, { name: string; arguments: string }>()
 
   constructor(initial: { events: readonly SessionEvent[] }) {
     const lastSeq = initial.events.at(-1)?.seq ?? 0
     this.lastSeq = lastSeq
+    for (const event of initial.events) {
+      if (event.type === 'tool/call') this.toolCalls.set(event.data.callId, { name: event.data.name, arguments: event.data.arguments })
+    }
     this.state = {
       // `assistant/chunk` rows from a prior session are never folded into
       // `streaming` (see appendEvent/foldChunk) — dropping them here too
@@ -156,6 +163,9 @@ export class TuiStore {
 
   getSnapshot = (): TuiState => this.state
 
+  /** The `tool/call` a later `tool/result` correlates with, by `callId`; `undefined` when its call was never seen (e.g. log truncation). */
+  getToolCall = (callId: CallId): { name: string; arguments: string } | undefined => this.toolCalls.get(callId)
+
   subscribe = (listener: Listener): (() => void) => {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)
@@ -165,6 +175,9 @@ export class TuiStore {
   appendEvent(event: SessionEvent): void {
     if (event.seq <= this.lastSeq) return
     this.lastSeq = event.seq
+    if (event.type === 'tool/call') {
+      this.toolCalls.set(event.data.callId, { name: event.data.name, arguments: event.data.arguments })
+    }
     if (event.type === 'assistant/chunk') {
       this.foldChunk(event.data)
       return

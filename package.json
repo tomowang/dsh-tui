@@ -58,12 +58,14 @@
     "@deepseek-ai/dsh-session-stats": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-settings": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-token-meter": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-tools": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-user-approval": "0.0.1-rc.1"
   },
   "dependencies": {
     "@deepseek-ai/dsh-cmdline": "^0.1.0-rc.6",
     "@deepseek-ai/schemastery": "^3.18.1",
     "commander": "^15.0.0",
+    "diff": "^9.0.0",
     "ink": "^7.1.1",
     "ink-text-input": "^6.0.0",
     "react": "^19.2.8"
@@ -86,6 +88,7 @@
     "@deepseek-ai/dsh-session-stats": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-settings": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-token-meter": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-tools": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-user-approval": "0.0.1-rc.1",
     "@eslint/js": "^10.0.1",
     "@types/node": "^24.0.0",

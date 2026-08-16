@@ -26,7 +26,7 @@ import { AgentPresetsOverlay } from './agentPresets/AgentPresetsOverlay.js'
 import { buildBannerText } from './bannerText.js'
 import { buildStatsLine, buildContextLine } from './statsFormat.js'
 import { commandQuery } from './commands.js'
-import { formatEvent, formatStreamingText } from '../render.js'
+import { formatEvent, formatStreamingText, type RenderOptions } from '../render.js'
 
 export type { TuiActions } from './PromptInput.js'
 
@@ -49,15 +49,31 @@ export interface AppProps {
   readonly columns: number
   /** Submitted-line history for the prompt's up/down-arrow recall; owned outside the Ink tree so `/clear` can preserve it. */
   readonly promptHistory: string[]
+  /** Look up a tool's declared presentation, for `tool/call`/`tool/result` cards. */
+  readonly getTool: RenderOptions['getTool']
+  /** Look up a `tool/call`'s name/arguments by `callId`, for a `tool/result` to present with. */
+  readonly getToolCall: RenderOptions['getToolCall']
 }
 
-function countEventLines(event: SessionEvent, replay: boolean): number {
-  const formatted = formatEvent(event, { replay })
+function countEventLines(event: SessionEvent, replay: boolean, getTool: RenderOptions['getTool'], getToolCall: RenderOptions['getToolCall']): number {
+  const formatted = formatEvent(event, { replay, getTool, getToolCall })
   if (formatted === undefined || formatted === '') return 0
   return formatted.split('\n').length
 }
 
-export function App({ store, actions, sessionId, provider, model, version, cwd, columns: initialColumns, promptHistory }: AppProps) {
+export function App({
+  store,
+  actions,
+  sessionId,
+  provider,
+  model,
+  version,
+  cwd,
+  columns: initialColumns,
+  promptHistory,
+  getTool,
+  getToolCall,
+}: AppProps) {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot)
   const { stdout } = useStdout()
   const { rows: windowRows, columns: windowColumns } = useWindowSize()
@@ -86,10 +102,10 @@ export function App({ store, actions, sessionId, provider, model, version, cwd, 
   const staticLines = useMemo(() => {
     const bannerLines = buildBannerText({ version, provider, model, cwd }, columns).split('\n').length
     const eventLines = state.events.reduce((total, event) => {
-      return total + countEventLines(event, event.seq <= state.replayThrough)
+      return total + countEventLines(event, event.seq <= state.replayThrough, getTool, getToolCall)
     }, 0)
     return bannerLines + eventLines
-  }, [version, provider, model, cwd, columns, state.events, state.replayThrough])
+  }, [version, provider, model, cwd, columns, state.events, state.replayThrough, getTool, getToolCall])
 
   const statsLine = useMemo(() => {
     const stats = buildStatsLine(state.stats.sessionStats, state.stats.tokenUsage)
@@ -156,7 +172,7 @@ export function App({ store, actions, sessionId, provider, model, version, cwd, 
           item.kind === 'banner' ? (
             <Banner key="banner" version={version} provider={provider} model={model} cwd={cwd} columns={columns} />
           ) : (
-            <EventLine key={item.event.seq} event={item.event} replay={item.replay} />
+            <EventLine key={item.event.seq} event={item.event} replay={item.replay} getTool={getTool} getToolCall={getToolCall} />
           )
         }
       </Static>

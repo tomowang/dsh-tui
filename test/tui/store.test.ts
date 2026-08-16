@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { CallId } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { TuiStore } from '../../src/tui/store.js'
 
@@ -17,6 +18,10 @@ function assistantMessageEvent(seq: number, turn: number, step: number): Session
     time: 0,
     data: { turn, step, message: { role: 'assistant', content: [] } },
   } as unknown as SessionEvent
+}
+
+function toolCallEvent(seq: number, callId: string, name: string, args: string): SessionEvent {
+  return { type: 'tool/call', seq, time: 0, data: { turn: 1, step: 1, callId, name, arguments: args } } as unknown as SessionEvent
 }
 
 describe('TuiStore construction', () => {
@@ -102,6 +107,24 @@ describe('TuiStore streaming', () => {
     expect(snapshot.events.map(e => e.seq)).toEqual([1, 3])
     expect(snapshot.streaming).toBeUndefined()
     expect(snapshot.replayThrough).toBe(3)
+  })
+})
+
+describe('TuiStore.getToolCall', () => {
+  it('resolves a call seeded from replay', () => {
+    const store = new TuiStore({ events: [toolCallEvent(1, 'call-1', 'read_file', '{"path":"/tmp/foo.txt"}')] })
+    expect(store.getToolCall(CallId('call-1'))).toEqual({ name: 'read_file', arguments: '{"path":"/tmp/foo.txt"}' })
+  })
+
+  it('resolves a call appended live', () => {
+    const store = new TuiStore({ events: [] })
+    store.appendEvent(toolCallEvent(1, 'call-1', 'bash', '{"command":"ls"}'))
+    expect(store.getToolCall(CallId('call-1'))).toEqual({ name: 'bash', arguments: '{"command":"ls"}' })
+  })
+
+  it('returns undefined for an unknown callId', () => {
+    const store = new TuiStore({ events: [] })
+    expect(store.getToolCall(CallId('missing'))).toBeUndefined()
   })
 })
 

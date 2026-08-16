@@ -7,16 +7,20 @@
 
 import { Text } from 'ink'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import { formatEvent } from '../render.js'
+import { formatEvent, type RenderOptions } from '../render.js'
 
 export interface EventLineProps {
   readonly event: SessionEvent
   /** True when this event was seeded from replay rather than observed live. */
   readonly replay: boolean
+  /** Look up a tool's declared presentation, for `tool/call`/`tool/result` cards. */
+  readonly getTool: RenderOptions['getTool']
+  /** Look up a `tool/call`'s name/arguments by `callId`, for a `tool/result` to present with. */
+  readonly getToolCall: RenderOptions['getToolCall']
 }
 
-export function EventLine({ event, replay }: EventLineProps) {
-  const line = formatEvent(event, { replay })
+export function EventLine({ event, replay, getTool, getToolCall }: EventLineProps) {
+  const line = formatEvent(event, { replay, getTool, getToolCall })
   if (line === undefined) return null
   return <Text>{line}</Text>
 }

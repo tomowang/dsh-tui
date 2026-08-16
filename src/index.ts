@@ -31,6 +31,7 @@ import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type { SettingsPathOp, SettingsScope } from '@deepseek-ai/dsh-settings'
+import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 // Empty type imports carry the loader Context merge for the mount await,
 // the cmdline Context merge for the appExit host value, the
 // permission-presets Context merge for ctx.permissionPresets, and the
@@ -258,6 +259,13 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
     const llmSvc = ctx.get('llm')
     if (settingsSvc === undefined || credentialsSvc === undefined || llmSvc === undefined) return undefined
     return { settings: settingsSvc, credentials: credentialsSvc, llm: llmSvc }
+  }
+
+  // Same optional-service pattern: a profile without a mounted tool registry
+  // just falls back to the flat `tool/call`/`tool/result` rendering `render.ts`
+  // already had before tool cards, instead of refusing to start.
+  function getTool(name: string): ToolDefinition | undefined {
+    return ctx.get('tools')?.get(name)
   }
 
   /** The session's current permission preset, or `undefined` without a mounted service. */
@@ -780,6 +788,8 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
       stdout: internals.stdout,
       stdin: process.stdin,
       promptHistory,
+      getTool,
+      getToolCall: store.getToolCall,
     })
     mounted.instance = instance
 

@@ -5,20 +5,32 @@
  * @module @tomowang/dsh-tui/render
  */
 
-import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import { diffLines } from 'diff'
+import type { CallId, ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import type { FileDiff, ToolCallView, ToolDefinition, ToolResult, ToolResultView } from '@deepseek-ai/dsh-tools'
 
 /** Rendering context: replay walks history already in the log. */
 export interface RenderOptions {
   /** True while replaying persisted events on startup. */
   replay: boolean
+  /** Look up a tool's declared presentation by name; absent outside the live TUI (e.g. tests). */
+  getTool?: (name: string) => ToolDefinition | undefined
+  /** Look up a `tool/call`'s name/arguments by `callId`, for a later `tool/result` to present with. */
+  getToolCall?: (callId: CallId) => { name: string; arguments: string } | undefined
 }
 
 const ESC = '\x1b['
 const dim = (s: string): string => `${ESC}2m${s}${ESC}0m`
 const cyan = (s: string): string => `${ESC}36m${s}${ESC}0m`
 const red = (s: string): string => `${ESC}31m${s}${ESC}0m`
+const green = (s: string): string => `${ESC}32m${s}${ESC}0m`
 const yellow = (s: string): string => `${ESC}33m${s}${ESC}0m`
+
+/** Line cap for a presented tool card's body; `<Static>` prints are permanent, so a long card gets a summary, not a fold. */
+const MAX_CARD_LINES = 20
+/** `diff` package's `maxEditLength`: bounds worst-case diff cost on a huge file, mirroring the removed first-party TUI's default. */
+const MAX_DIFF_EDIT_LENGTH = 1000
 
 /** Clamp one-line summaries so tool arguments cannot flood the transcript. */
 export function truncate(text: string, max: number): string {
@@ -42,16 +54,199 @@ export function formatStreamingText(text: string): string | undefined {
   return text === '' ? undefined : `\n${text}\n`
 }
 
+/** Parse a tool call's JSON-encoded arguments; malformed JSON can't be handed to a presenter. */
+function parseJson(text: string): { valid: true; value: unknown } | { valid: false } {
+  try {
+    return { valid: true, value: JSON.parse(text) as unknown }
+  } catch {
+    return { valid: false }
+  }
+}
+
+/** Render a value for display: a string as-is, anything else as pretty JSON. */
+function pretty(value: unknown): string {
+  if (typeof value === 'string') return value
+  const serialized = JSON.stringify(value, null, 2) as string | undefined
+  return serialized ?? String(value)
+}
+
+/** A string's content lines: empty text is zero lines, a trailing newline terminates the last line. */
+function splitLines(text: string): string[] {
+  if (text === '') return []
+  const body = text.endsWith('\n') ? text.slice(0, -1) : text
+  return body.split('\n')
+}
+
+/** Cap a card body to `max` lines, appending a dim summary of what was omitted. */
+function capLines(lines: readonly string[], max: number): string[] {
+  if (lines.length <= max) return [...lines]
+  const omitted = lines.length - max
+  return [...lines.slice(0, max), dim(`… +${omitted} line${omitted === 1 ? '' : 's'} omitted`)]
+}
+
+/**
+ * One file's change as +/- diff lines under a dim path header. A `null` prior
+ * text (new file, or a call-time overwrite with no before-image) renders the
+ * whole new text as additions; a comparison beyond `MAX_DIFF_EDIT_LENGTH` falls
+ * back to whole-side add/remove so a huge file can't stall formatting.
+ */
+function renderFileDiff(diff: FileDiff): string[] {
+  const lines = [dim(diff.path)]
+  if (diff.oldText === null) {
+    for (const line of splitLines(diff.newText)) lines.push(green(`+ ${line}`))
+    return lines
+  }
+  const changes = diffLines(diff.oldText, diff.newText, { maxEditLength: MAX_DIFF_EDIT_LENGTH })
+  if (changes === undefined) {
+    lines.push(dim(`[diff omitted: over ${MAX_DIFF_EDIT_LENGTH} changed lines]`))
+    for (const line of splitLines(diff.oldText)) lines.push(red(`- ${line}`))
+    for (const line of splitLines(diff.newText)) lines.push(green(`+ ${line}`))
+    return lines
+  }
+  for (const change of changes) {
+    const prefix = change.added ? '+' : change.removed ? '-' : ' '
+    const color = change.added ? green : change.removed ? red : dim
+    for (const line of splitLines(change.value)) lines.push(color(`${prefix} ${line}`))
+  }
+  return lines
+}
+
+/** One or more `FileDiff`s, blank-line separated when there's more than one. */
+function renderFileDiffs(diffs: readonly FileDiff[]): string[] {
+  return diffs.flatMap((fileDiff, index) => (index > 0 ? [''] : []).concat(renderFileDiff(fileDiff)))
+}
+
+/** Today's flat one-line fallback for a pending call, unchanged: no tool, no presenter, bad JSON, or a throwing/`undefined` presenter. */
+function fallbackCallLine(name: string, rawArgs: string): string {
+  return `${cyan('⚙')} ${name} ${dim(truncate(rawArgs, 100))}`
+}
+
+/** Resolve a `tool/call`'s presented view, or `undefined` for any condition that keeps the flat fallback. */
+function presentCallSafely(name: string, rawArgs: string, getTool: RenderOptions['getTool']): ToolCallView | undefined {
+  const tool = getTool?.(name)
+  if (tool?.presentCall === undefined) return undefined
+  const parsed = parseJson(rawArgs)
+  if (!parsed.valid) return undefined
+  try {
+    return tool.presentCall(parsed.value)
+  } catch {
+    return undefined
+  }
+}
+
+/** A presented pending call's lines: a cyan header (the presenter's title) plus card-specific body. */
+function formatCallLines(view: ToolCallView): string[] {
+  const header = `${cyan('⚙')} ${view.title}`
+  if (view.card === 'terminal') {
+    const lines: string[] = []
+    if (view.description !== undefined && view.description !== '') lines.push(dim(view.description))
+    lines.push(header)
+    if (view.cwd !== undefined) lines.push(dim(view.cwd))
+    return lines
+  }
+  if (view.card === 'diff') {
+    return [header, ...renderFileDiffs(view.diffs)]
+  }
+  const rawInput = view.rawInput === undefined ? [] : splitLines(pretty(view.rawInput)).map(dim)
+  return [header, ...rawInput]
+}
+
+/** Format a `tool/call` event, presenting through the tool's `presentCall` when available. */
+function formatToolCall(name: string, rawArgs: string, getTool: RenderOptions['getTool']): string {
+  const view = presentCallSafely(name, rawArgs, getTool)
+  if (view === undefined) return fallbackCallLine(name, rawArgs)
+  const lines = capLines(formatCallLines(view), MAX_CARD_LINES)
+  return lines.length <= 1 ? lines[0] : `\n${lines.join('\n')}\n`
+}
+
+/** Resolve a `tool/result`'s presented view, or `undefined` for any condition that keeps the flat fallback. */
+function presentResultSafely(
+  callId: CallId,
+  result: ToolResult,
+  options: RenderOptions,
+): { name: string; view: ToolResultView } | undefined {
+  const call = options.getToolCall?.(callId)
+  if (call === undefined) return undefined
+  const tool = options.getTool?.(call.name)
+  if (tool?.presentResult === undefined) return undefined
+  const parsed = parseJson(call.arguments)
+  if (!parsed.valid) return undefined
+  try {
+    const view = tool.presentResult(parsed.value, result)
+    return view === undefined ? undefined : { name: call.name, view }
+  } catch {
+    return undefined
+  }
+}
+
+/** A presented completed call's lines: an outcome-colored header plus card-specific body. */
+function formatResultLines(fallbackName: string, icon: string, rawContent: readonly ContentBlock[], view: ToolResultView): string[] {
+  const header = `${icon} ${view.title ?? fallbackName}`
+  switch (view.card) {
+    case 'generic': {
+      const body = splitLines(textOf(view.content ?? rawContent)).map(dim)
+      return [header, ...body]
+    }
+    case 'terminal': {
+      const lines = [header]
+      if (view.output !== undefined && view.output !== '') lines.push(...splitLines(view.output).map(dim))
+      if (view.exitCode !== undefined) lines.push(dim(`[exit ${view.exitCode}]`))
+      if (view.signal !== undefined) lines.push(red(`[signal ${view.signal}]`))
+      return lines
+    }
+    case 'diff': {
+      return [header, ...renderFileDiffs(view.diffs)]
+    }
+    case 'search': {
+      const lines = [header]
+      let shown = 0
+      if (view.shape === 'matches') {
+        for (const file of view.files) {
+          lines.push(dim(file.path))
+          for (const match of file.matches) lines.push(dim(`  ${match.lineNumber}: ${match.line}`))
+          shown += file.matches.length
+        }
+      } else {
+        for (const path of view.paths) lines.push(dim(path))
+        shown = view.paths.length
+      }
+      if (view.truncated) lines.push(dim(`… showing ${shown} of ${view.total}`))
+      return lines
+    }
+    case 'read': {
+      // Falls back to the read path, not the tool name — a read result's
+      // salient identity is which file it read, not which tool read it.
+      const lines = [`${icon} ${view.title ?? view.path}`]
+      for (const line of view.lines) lines.push(dim(`${line.number}: ${line.text}`))
+      if (view.totalLines > 0) {
+        const last = view.offset + view.lines.length - 1
+        lines.push(dim(`[${view.offset}-${last} of ${view.totalLines}]`))
+      }
+      return lines
+    }
+    case 'web': {
+      const lines = [header]
+      if (view.kind === 'search') {
+        for (const source of view.sources) lines.push(dim(`${source.title ?? source.url} — ${source.url}`))
+        if (view.answer !== undefined && view.answer !== '') lines.push(...splitLines(view.answer).map(dim))
+      } else {
+        lines.push(dim(`${view.url} [${view.statusCode}]`))
+      }
+      if (view.truncated) lines.push(dim('… truncated'))
+      return lines
+    }
+  }
+}
+
 /**
  * Format one durable session event as a terminal line, or `undefined` for
  * events this viewer does not present. Unknown event types are silently
  * skipped: the log's vocabulary is merge-extensible and a transcript viewer
  * must tolerate events from plugins it does not know.
  * @param event - the durable session event to project.
- * @param _options - replay/live rendering context; reserved for a future
- * replay-vs-live visual distinction (e.g. dimming), not consulted yet.
+ * @param options - replay/live rendering context, plus optional tool-presentation resolvers.
  */
-export function formatEvent(event: SessionEvent, _options: RenderOptions): string | undefined {
+export function formatEvent(event: SessionEvent, options: RenderOptions): string | undefined {
   switch (event.type) {
     case 'user/message': {
       const source = event.data.source
@@ -73,19 +268,28 @@ export function formatEvent(event: SessionEvent, _options: RenderOptions): strin
       return text === '' ? undefined : `\n${text}\n`
     }
     case 'tool/call': {
-      return `${cyan('⚙')} ${event.data.name} ${dim(truncate(event.data.arguments, 100))}`
+      return formatToolCall(event.data.name, event.data.arguments, options.getTool)
     }
     case 'tool/result': {
       // `error` marks an internal/harness-level failure (distinct from
       // `isError` on the block, which is the ordinary model-facing outcome).
+      // An internal failure is the harness's to report, not a tool's to
+      // reformat, so it bypasses presentation entirely.
       if (event.data.error !== undefined) {
         return `${red('✖')} ${event.data.error.code}: ${event.data.error.name}`
       }
       const [block] = event.data.message.content
       const failed = block.isError === true
       const icon = failed ? red('✖') : cyan('✓')
-      const text = truncate(textOf(block.content), 100)
-      return text === '' ? icon : `${icon} ${dim(text)}`
+      const callId = event.data.message.source.callId
+      const result: ToolResult = { content: block.content, isError: failed, ...event.data.meta !== undefined ? { meta: event.data.meta } : {} }
+      const presented = presentResultSafely(callId, result, options)
+      if (presented === undefined) {
+        const text = truncate(textOf(block.content), 100)
+        return text === '' ? icon : `${icon} ${dim(text)}`
+      }
+      const lines = capLines(formatResultLines(presented.name, icon, block.content, presented.view), MAX_CARD_LINES)
+      return lines.length <= 1 ? lines[0] : `\n${lines.join('\n')}\n`
     }
     case 'turn/end': {
       const reason = event.data.reason
