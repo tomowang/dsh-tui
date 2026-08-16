@@ -55,6 +55,8 @@ export interface TuiActions {
   shutdown(): void
   /** Publish a transient `/status` snapshot as the live-region notice. */
   status(): void
+  /** Publish the `/help` command list and key shortcuts as the live-region notice. */
+  help(): void
   /** Persist one newly submitted history line for cross-session up/down-arrow recall (best-effort; no-op without a settings service). */
   recordHistory(line: string): void
   /** Flush the current session, then start a brand-new one in a fresh screen. */

@@ -53,6 +53,7 @@ import type {} from '@deepseek-ai/dsh-token-meter'
 import type { Instance } from 'ink'
 
 import { ensureSessionIdPrefix, stripSessionIdPrefix } from './sessionId.js'
+import { SLASH_COMMANDS, SLASH_COMMAND_WIDTH } from './tui/commands.js'
 import { TuiStore } from './tui/store.js'
 import type { ModelProfileOverlayState, PermissionState, PresetState, StatsSnapshot } from './tui/store.js'
 import { mountTui } from './tui/mount.js'
@@ -839,6 +840,16 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
       },
       status() {
         store.setNotice(`session ${String(agent.session.id)} · ${agent.status} · ${agent.session.events.length} logged events`)
+      },
+      help() {
+        const commands = SLASH_COMMANDS.map(c => `  ${c.command.padEnd(SLASH_COMMAND_WIDTH)}  ${c.description}`).join('\n')
+        const shortcuts = [
+          '  Shift+Tab       cycle the permission preset',
+          '  !               on an empty prompt, enter shell mode (Enter runs a local command)',
+          '  @               open the file-mention dropdown',
+          '  Ctrl+C, Ctrl+D  cancel a running turn; press twice on an idle empty line to exit',
+        ].join('\n')
+        store.setNotice(`Commands:\n${commands}\n\nShortcuts:\n${shortcuts}`)
       },
       recordHistory: persistHistory,
       clear() {

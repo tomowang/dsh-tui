@@ -8,6 +8,7 @@ function stubActions(): TuiActions {
     cancel: vi.fn(),
     shutdown: vi.fn(),
     status: vi.fn(),
+    help: vi.fn(),
     recordHistory: vi.fn(),
     clear: vi.fn(),
     cyclePermission: vi.fn(),
@@ -74,6 +75,13 @@ describe('runSlashCommand', () => {
     const actions = stubActions()
     runSlashCommand('/quit', actions)
     expect(actions.shutdown).toHaveBeenCalledTimes(1)
+    expect(totalCalls(actions)).toBe(1)
+  })
+
+  it('dispatches /help to help', () => {
+    const actions = stubActions()
+    runSlashCommand('/help', actions)
+    expect(actions.help).toHaveBeenCalledTimes(1)
     expect(totalCalls(actions)).toBe(1)
   })
 

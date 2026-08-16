@@ -13,6 +13,7 @@ export interface SlashCommand {
 }
 
 export const SLASH_COMMANDS: readonly SlashCommand[] = [
+  { command: '/help', description: 'Show help and available commands' },
   { command: '/model', description: 'Manage LLM provider profiles' },
   { command: '/trajectory', description: 'Browse the turn/step event ledger' },
   { command: '/context', description: 'Show context window usage' },
@@ -42,6 +43,9 @@ export function commandQuery(value: string): { isCommandMode: boolean; matches: 
 
 export function runSlashCommand(command: string, actions: TuiActions): void {
   switch (command) {
+    case '/help':
+      actions.help()
+      return
     case '/exit':
     case '/quit':
       actions.shutdown()

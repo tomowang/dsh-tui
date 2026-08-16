@@ -61,6 +61,7 @@ Any row `--dump-config` prints — the model adapter, tool set, sandbox policy, 
 | Input | Effect |
 |---|---|
 | any text | follow-up while idle, steering while a turn runs |
+| `/help` | show available commands and keyboard shortcuts |
 | `/model` | manage LLM provider profiles: switch model, add/edit/delete a custom provider |
 | `/presets` | view and switch agent presets (fixed once the session's first turn has run) |
 | `/trajectory` | browse the turn/step event ledger with a detail inspector and filter |
