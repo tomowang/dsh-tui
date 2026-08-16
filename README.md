@@ -4,16 +4,7 @@ An open-source terminal front door for [DeepSeek Harness](https://github.com/dee
 
 `@tomowang/dsh-tui` is an **out-of-tree mode bundle**: it stacks on `@deepseek-ai/dsh-base` exactly like the shipped `dsh-web-app` and `dsh-headless` bundles do, but drives the agent from your terminal instead of a browser. The package is both a Cordis plugin (terminal input and presentation) and a dsh bundle (`dsh.bundle.patch` in `package.json` points at [`cordis.patch.yml`](cordis.patch.yml)); everything else — model adapters, tools, session persistence, sandbox and approval policy — stays in `dsh-base` and remains patchable underneath.
 
-![dsh-tui session in a terminal, showing the startup banner, injected context, and tool calls](assets/screenshot.png)
-
-<details>
-<summary>Screencast</summary>
-
-<video src="assets/screencast.mp4" controls width="100%"></video>
-
-If the player above doesn't render, watch/download it directly: [assets/screencast.mp4](assets/screencast.mp4)
-
-</details>
+![dsh-tui screencast](assets/screencast.gif)
 
 ## How it works
 
