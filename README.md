@@ -25,6 +25,8 @@ An open-source terminal front door for [DeepSeek Harness](https://github.com/dee
 - **Manual compaction** — `/compact` summarizes and compacts session history on demand.
 - **Persisted prompt history** — submitted lines are saved across processes and `/clear`, recalled with `↑`/`↓`.
 - **Readline-style input** — word/line motion, kill/yank-style deletes, multi-line drafts, and shell-like double-press `Ctrl+C`/`Ctrl+D` to exit.
+- **Shell mode** — a leading `!` on an empty prompt (Claude Code's convention) switches Enter to run the line as a local shell command instead of sending it to the agent; the prompt border turns yellow for the duration, and output streams into the transcript without touching the session log.
+- **`@`-file-mention autocomplete** — typing `@` opens a fuzzy-filtered dropdown of repo files (`git ls-files`, or a bounded walk outside a git repo); `Tab`/`Enter` inserts the picked path at the cursor.
 - Every overlay degrades to a plain notice instead of failing the whole TUI when its backing service isn't mounted in a given profile.
 
 ## Install
@@ -76,6 +78,8 @@ Any row `--dump-config` prints — the model adapter, tool set, sandbox policy, 
 | `Ctrl+C` | cancel a running turn; on an idle empty line, press twice within 2s to exit |
 | `Ctrl+D` | forward-delete; on an idle empty line, press twice within 2s to exit |
 | `Shift+Tab` | cycle the permission preset (`read-only` / `workspace-write` / `danger-full-access` / `custom`) |
+| `!` (on an empty prompt) | enter shell mode: Enter runs the line as a local shell command; `Esc`/backspace-on-empty exits back to normal mode |
+| `@` | open the file-mention dropdown; `↑`/`↓` to move, `Tab`/`Enter` to insert the path, `Esc` to dismiss |
 | `Tab` | in `/command` mode, autocomplete the highlighted command |
 | `↑` / `↓`, `Ctrl+P` / `Ctrl+N` | recall prompt history, or move within a multi-line draft |
 | `Shift+Enter`, `Alt+Enter`, trailing `\` + `Enter` | insert a newline instead of submitting |
