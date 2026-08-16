@@ -141,7 +141,17 @@ export interface TuiState {
   readonly shellRun: ShellRunState | undefined
   /** Settled local shell-escape runs, in completion order, interleaved into the transcript via `afterSeq`. */
   readonly shellHistory: readonly ShellRunRecord[]
+  /** Repo-relative file paths backing the `@`-mention dropdown; `undefined` until the first mention triggers a load. */
+  readonly fileIndex: FileIndexState
 }
+
+/** The `@`-mention dropdown's backing file list, loaded lazily on first use (see `ensureFileIndex` in `src/index.ts`). */
+export interface FileIndexState {
+  readonly candidates: readonly string[] | undefined
+  readonly loading: boolean
+}
+
+const EMPTY_FILE_INDEX: FileIndexState = { candidates: undefined, loading: false }
 
 const CLOSED_OVERLAY: Overlay = { kind: 'none' }
 
@@ -184,6 +194,7 @@ export class TuiStore {
       streaming: undefined,
       shellRun: undefined,
       shellHistory: [],
+      fileIndex: EMPTY_FILE_INDEX,
     }
   }
 
@@ -357,6 +368,17 @@ export class TuiStore {
   /** Move the `/presets` overlay's list cursor. */
   selectAgentPresetRow(index: number): void {
     this.updateAgentPresets({ selected: index })
+  }
+
+  /** Mark the `@`-mention file index as loading; a no-op once candidates are already present. */
+  setFileIndexLoading(): void {
+    if (this.state.fileIndex.candidates !== undefined) return
+    this.set({ fileIndex: { candidates: undefined, loading: true } })
+  }
+
+  /** Settle the `@`-mention file index once `loadFileIndex` resolves. */
+  setFileIndex(candidates: readonly string[]): void {
+    this.set({ fileIndex: { candidates, loading: false } })
   }
 
   private set(partial: Partial<TuiState>): void {

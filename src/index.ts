@@ -56,6 +56,7 @@ import { ensureSessionIdPrefix, stripSessionIdPrefix } from './sessionId.js'
 import { TuiStore } from './tui/store.js'
 import type { ModelProfileOverlayState, PermissionState, PresetState, StatsSnapshot } from './tui/store.js'
 import { mountTui } from './tui/mount.js'
+import { loadFileIndex } from './tui/fileIndex.js'
 import type { TuiActions } from './tui/App.js'
 import { readPackageVersion } from './version.js'
 import type { ProviderDraft, ProviderRow, StoredProviderProfile } from './tui/modelProfile/types.js'
@@ -411,6 +412,15 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
     } catch (error) {
       current.store.updateAgentPresets({ busy: false, error: error instanceof Error ? error.message : String(error) })
     }
+  }
+
+  /** Load the `@`-mention dropdown's backing file list, guarded against a redundant reload once one is already loaded/in flight. */
+  async function ensureFileIndexLoaded(): Promise<void> {
+    const snapshot = current.store.getSnapshot().fileIndex
+    if (snapshot.candidates !== undefined || snapshot.loading) return
+    current.store.setFileIndexLoading()
+    const candidates = await loadFileIndex(process.cwd())
+    current.store.setFileIndex(candidates)
   }
 
   /** Write a draft's fields as path ops under its (or a new custom route's) settings path, then its API key. */
@@ -867,6 +877,9 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
             store.setNotice(`compaction failed: ${message}`)
           })
           .finally(() => { compacting = false })
+      },
+      ensureFileIndex() {
+        void ensureFileIndexLoaded()
       },
 
       openModelProfile() {

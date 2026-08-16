@@ -12,6 +12,7 @@ function stubActions(): TuiActions {
     clear: vi.fn(),
     cyclePermission: vi.fn(),
     compact: vi.fn(),
+    ensureFileIndex: vi.fn(),
     openModelProfile: vi.fn(),
     closeModelProfile: vi.fn(),
     backToProviderList: vi.fn(),

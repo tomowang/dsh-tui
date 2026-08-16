@@ -39,6 +39,8 @@ import { useEffect, useRef, useState, type Dispatch } from 'react'
 import { Box, Text, useInput } from 'ink'
 import type { AgentStatus } from '@deepseek-ai/dsh-agent'
 import { commandQuery, matchSlashCommands, runSlashCommand, SLASH_COMMAND_WIDTH } from './commands.js'
+import { mentionQuery, matchFileCandidates } from './fileMention.js'
+import type { FileIndexState } from './store.js'
 import type { ProviderDraft, ProviderRow } from './modelProfile/types.js'
 import type { QuestionAnswer } from './interaction/types.js'
 
@@ -61,6 +63,8 @@ export interface TuiActions {
   cyclePermission(): void
   /** Manually trigger session-history compaction via `ctx.compaction`. */
   compact(): void
+  /** Start (or no-op if already loaded/loading) the background load backing the `@`-mention dropdown. */
+  ensureFileIndex(): void
 
   /** Open the `/model` provider-profile overlay and start loading providers. */
   openModelProfile(): void
@@ -128,6 +132,8 @@ export interface PromptInputProps {
    * (outside the Ink tree) so it survives `/clear` remounting this component.
    */
   readonly history: string[]
+  /** Backing file list for the `@`-mention dropdown, from `TuiStore`. */
+  readonly fileIndex: FileIndexState
 }
 
 const EXIT_ARM_TIMEOUT_MS = 2000
@@ -235,6 +241,7 @@ export type Action =
   | { type: 'newlineFromBackslash' }
   | { type: 'reset' }
   | { type: 'completeCommand'; text: string }
+  | { type: 'completeMention'; start: number; end: number; text: string }
   | { type: 'enterShellMode' }
   | { type: 'exitShellMode' }
 
@@ -342,6 +349,11 @@ export function bufferReducer(state: PromptState, action: Action): PromptState {
       return initialState
     case 'completeCommand':
       return { ...state, value: action.text, cursor: action.text.length }
+    case 'completeMention': {
+      const inserted = `${action.text} `
+      const value = state.value.slice(0, action.start) + inserted + state.value.slice(action.end)
+      return { ...state, value, cursor: action.start + inserted.length }
+    }
     case 'enterShellMode':
       return { ...state, shellMode: true }
     case 'exitShellMode':
@@ -349,9 +361,14 @@ export function bufferReducer(state: PromptState, action: Action): PromptState {
   }
 }
 
-export function PromptInput({ status, actions, state, dispatch, history }: PromptInputProps) {
+export function PromptInput({ status, actions, state, dispatch, history, fileIndex }: PromptInputProps) {
   const [armedKey, setArmedKey] = useState<'c' | 'd' | null>(null)
   const armTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [mentionSelected, setMentionSelected] = useState(0)
+  // Esc dismisses the dropdown for the current `@…` token without touching
+  // the buffer; typing further (changing the query) reopens it, mirroring
+  // how a dismissed slash-command list only stays gone until the text moves on.
+  const [mentionDismissed, setMentionDismissed] = useState(false)
 
   useEffect(() => {
     return () => {
@@ -364,6 +381,23 @@ export function PromptInput({ status, actions, state, dispatch, history }: Promp
   const { isCommandMode, matches } = state.shellMode ? { isCommandMode: false, matches: [] } : commandQuery(state.value)
   const selected = matches.length === 0 ? 0 : Math.min(state.selectedIndex, matches.length - 1)
   const lines = state.value.split('\n')
+
+  // `@`-mention mode never overlaps command mode: `isCommandMode` requires
+  // the whole trimmed value to have no whitespace, so a later `@` only opens
+  // once a space has ended the slash command.
+  const mention = state.shellMode || isCommandMode ? { isMentionMode: false, query: '', start: -1 } : mentionQuery(state.value, state.cursor)
+  const mentionOpen = mention.isMentionMode && !mentionDismissed
+  const mentionMatches = mentionOpen ? matchFileCandidates(fileIndex.candidates ?? [], mention.query) : []
+  const mentionSelectedClamped = mentionMatches.length === 0 ? 0 : Math.min(mentionSelected, mentionMatches.length - 1)
+
+  useEffect(() => {
+    setMentionSelected(0)
+    setMentionDismissed(false)
+  }, [mention.isMentionMode, mention.query])
+
+  useEffect(() => {
+    if (mention.isMentionMode) actions.ensureFileIndex()
+  }, [mention.isMentionMode, actions])
 
   // A second press of the same key within the timeout confirms exit; a
   // different key (or an expired arm) starts a fresh arm instead.
@@ -431,6 +465,35 @@ export function PromptInput({ status, actions, state, dispatch, history }: Promp
     if (key.tab && isCommandMode && matches.length > 0) {
       dispatch({ type: 'completeCommand', text: matches[selected].command })
       return
+    }
+    // `@`-mention dropdown: Esc dismisses it for this token even with no
+    // matches; Up/Down/Tab/Enter only apply once there's something to pick.
+    if (mentionOpen) {
+      if (key.escape) {
+        setMentionDismissed(true)
+        return
+      }
+      if (mentionMatches.length > 0) {
+        if (key.upArrow || (key.ctrl && input === 'p')) {
+          setMentionSelected((mentionSelectedClamped - 1 + mentionMatches.length) % mentionMatches.length)
+          return
+        }
+        if (key.downArrow || (key.ctrl && input === 'n')) {
+          setMentionSelected((mentionSelectedClamped + 1) % mentionMatches.length)
+          return
+        }
+        if (key.tab || key.return) {
+          dispatch({
+            type: 'completeMention',
+            // start is right after the `@` itself, so it's preserved in the
+            // inserted text (`@src/index.ts `) rather than spliced away.
+            start: mention.start + 1,
+            end: mention.start + 1 + mention.query.length,
+            text: mentionMatches[mentionSelectedClamped],
+          })
+          return
+        }
+      }
     }
     if (key.ctrl && input === 'c') {
       if (status === 'running') {
@@ -556,6 +619,20 @@ export function PromptInput({ status, actions, state, dispatch, history }: Promp
           {matches.map((cmd, i) => (
             <Text key={cmd.command} inverse={i === selected}>
               {cmd.command.padEnd(SLASH_COMMAND_WIDTH)} {cmd.description}
+            </Text>
+          ))}
+        </Box>
+      )}
+      {mentionOpen && fileIndex.candidates === undefined && (
+        <Box paddingX={1}>
+          <Text dimColor>loading files…</Text>
+        </Box>
+      )}
+      {mentionOpen && fileIndex.candidates !== undefined && mentionMatches.length > 0 && (
+        <Box flexDirection="column" paddingX={1}>
+          {mentionMatches.map((path, i) => (
+            <Text key={path} inverse={i === mentionSelectedClamped}>
+              {path}
             </Text>
           ))}
         </Box>

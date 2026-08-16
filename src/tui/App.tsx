@@ -29,6 +29,7 @@ import { QuestionOverlay } from './interaction/QuestionOverlay.js'
 import { buildBannerText } from './bannerText.js'
 import { buildStatsLine, buildContextLine } from './statsFormat.js'
 import { commandQuery } from './commands.js'
+import { mentionQuery, matchFileCandidates } from './fileMention.js'
 import { formatEvent, formatStreamingText, formatShellRun, formatShellRunLive, type RenderOptions } from '../render.js'
 
 export type { TuiActions } from './PromptInput.js'
@@ -98,6 +99,18 @@ export function App({
     [promptState.value, promptState.shellMode],
   )
   const promptLineCount = useMemo(() => promptState.value.split('\n').length, [promptState.value])
+  // Mirrors `commandMatchesCount`'s reasoning above: computed here (not read
+  // back from `PromptInput`) so the spacer never overflows for one frame.
+  // Ignores `PromptInput`'s own Esc-dismiss state, which only ever shrinks
+  // the dropdown — an over-reservation there is harmless, unlike an
+  // under-reservation on the growth path this guards against.
+  const mentionMatchesCount = useMemo(() => {
+    if (promptState.shellMode || commandQuery(promptState.value).isCommandMode) return 0
+    const mention = mentionQuery(promptState.value, promptState.cursor)
+    if (!mention.isMentionMode) return 0
+    if (state.fileIndex.candidates === undefined) return 1
+    return matchFileCandidates(state.fileIndex.candidates, mention.query).length
+  }, [promptState.value, promptState.cursor, promptState.shellMode, state.fileIndex.candidates])
 
   // The banner is a fixed item 0; events and settled shell runs are merged by
   // `sortKey` (an event's `seq`, or a shell run's `afterSeq` — the highest
@@ -182,7 +195,7 @@ export function App({
     const statsLines = statsLine === '' ? 0 : 1
     // 2 accounts for the prompt box's top/bottom border; promptLineCount is
     // its content rows, which grow with a multi-line draft.
-    const promptLines = 2 + promptLineCount + commandMatchesCount
+    const promptLines = 2 + promptLineCount + commandMatchesCount + mentionMatchesCount
     const permissionLines = state.permission === undefined ? 0 : 1
     return noticeLines + queuedLines + streamingLines + shellRunLines + statusBarLines + statsLines + promptLines + permissionLines
   }, [
@@ -192,6 +205,7 @@ export function App({
     state.streaming,
     state.shellRun,
     commandMatchesCount,
+    mentionMatchesCount,
     promptLineCount,
     state.permission,
     statsLine,
@@ -252,6 +266,7 @@ export function App({
               state={promptState}
               dispatch={promptDispatch}
               history={promptHistory}
+              fileIndex={state.fileIndex}
             />
             <PermissionIndicator permission={state.permission} />
             <StatsLine line={statsLine} />
