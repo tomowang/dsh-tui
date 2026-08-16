@@ -8,12 +8,15 @@
  */
 
 import type { AgentStatus } from '@deepseek-ai/dsh-agent'
+import { BlockAssembler } from '@deepseek-ai/dsh-llm'
+import type { StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent, UserMessage } from '@deepseek-ai/dsh-session'
 import type { SessionStatsProjection } from '@deepseek-ai/dsh-session-stats'
 import type { ContextBreakdownProjection, ContextPressureProjection, TokenUsageProjection } from '@deepseek-ai/dsh-token-meter'
 import type { DiscoveredModel, ProviderDraft, ProviderRow } from './modelProfile/types.js'
 import type { PluginRow } from './plugins/types.js'
 import type { AgentPresetRow } from './agentPresets/types.js'
+import { textOf } from '../render.js'
 
 /** Which pane of the `/model` overlay is showing. */
 export type ModelProfileView = 'list' | 'form'
@@ -85,6 +88,13 @@ export interface PresetState {
   readonly blank: boolean
 }
 
+/** The currently-generating step's accumulated text, folded live from `assistant/chunk`. */
+export interface StreamingState {
+  readonly turn: number
+  readonly step: number
+  readonly text: string
+}
+
 /** One immutable snapshot of everything the TUI renders. */
 export interface TuiState {
   /** Session log so far, in append order. */
@@ -105,6 +115,8 @@ export interface TuiState {
   readonly stats: StatsSnapshot
   /** Current agent preset, or `undefined` when `ctx.agentPresets` isn't composed in this profile. */
   readonly preset: PresetState | undefined
+  /** The in-flight step's accumulated text, or `undefined` when nothing is currently streaming. */
+  readonly streaming: StreamingState | undefined
 }
 
 const CLOSED_OVERLAY: Overlay = { kind: 'none' }
@@ -116,12 +128,20 @@ export class TuiStore {
   private state: TuiState
   private readonly listeners = new Set<Listener>()
   private lastSeq: number
+  // Not part of TuiState: mid-stream assembly state for the in-flight step,
+  // rebuilt fresh whenever a chunk's `{turn, step}` doesn't match the last one.
+  private streamingAssembler: BlockAssembler | undefined
+  private streamingKey: { turn: number; step: number } | undefined
 
   constructor(initial: { events: readonly SessionEvent[] }) {
     const lastSeq = initial.events.at(-1)?.seq ?? 0
     this.lastSeq = lastSeq
     this.state = {
-      events: initial.events,
+      // `assistant/chunk` rows from a prior session are never folded into
+      // `streaming` (see appendEvent/foldChunk) — dropping them here too
+      // keeps a resumed session's <Static> transcript free of dead entries
+      // that would only ever render as null.
+      events: initial.events.filter(event => event.type !== 'assistant/chunk'),
       replayThrough: lastSeq,
       status: 'idle',
       queued: [],
@@ -130,6 +150,7 @@ export class TuiStore {
       permission: undefined,
       stats: EMPTY_STATS,
       preset: undefined,
+      streaming: undefined,
     }
   }
 
@@ -144,7 +165,29 @@ export class TuiStore {
   appendEvent(event: SessionEvent): void {
     if (event.seq <= this.lastSeq) return
     this.lastSeq = event.seq
+    if (event.type === 'assistant/chunk') {
+      this.foldChunk(event.data)
+      return
+    }
+    if (event.type === 'assistant/message') {
+      this.streamingAssembler = undefined
+      this.streamingKey = undefined
+      this.set({ events: [...this.state.events, event], streaming: undefined })
+      return
+    }
     this.set({ events: [...this.state.events, event] })
+  }
+
+  /** Fold one raw stream chunk into the in-flight step's live text, keyed by `{turn, step}`. */
+  private foldChunk(data: { turn: number; step: number; chunk: StreamChunk }): void {
+    const { turn, step, chunk } = data
+    if (this.streamingKey?.turn !== turn || this.streamingKey?.step !== step) {
+      this.streamingAssembler = new BlockAssembler()
+      this.streamingKey = { turn, step }
+    }
+    this.streamingAssembler!.push(chunk)
+    const text = textOf(this.streamingAssembler!.blocks())
+    this.set({ streaming: text === '' ? undefined : { turn, step, text } })
   }
 
   setStatus(status: AgentStatus): void {

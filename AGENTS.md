@@ -49,7 +49,7 @@ Both stdin and stdout must be real TTYs — `apply()` in `src/index.ts` throws l
 
 ## Current status / roadmap
 
-Early scaffold: settled session events print to native scrollback; a live status bar and boxed prompt sit pinned to the terminal's bottom row. Not yet implemented (see README for details): streaming output from `assistant/chunk`, tool cards via `presentCall`/`presentResult`, an in-terminal `userInteraction` approval provider, and full-screen differential rendering with terminal restoration on failure. The removed first-party `@deepseek-ai/dsh-tui` (deleted from the harness repo, recoverable from git history) is the reference for this direction.
+Early scaffold: settled session events print to native scrollback; a live status bar and boxed prompt sit pinned to the terminal's bottom row. Assistant text now streams live from `assistant/chunk` (folded via `@deepseek-ai/dsh-llm`'s `BlockAssembler` in `TuiStore`, rendered in the live region below `<Static>` until the step settles — see `src/tui/store.ts`, `src/tui/StreamingLine.tsx`). Not yet implemented (see README for details): tool cards via `presentCall`/`presentResult`, an in-terminal `userInteraction` approval provider, and full-screen differential rendering with terminal restoration on failure. The removed first-party `@deepseek-ai/dsh-tui` (deleted from the harness repo, recoverable from git history) is the reference for this direction.
 
 ## Releasing
 

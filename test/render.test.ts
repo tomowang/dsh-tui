@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import { formatEvent, truncate } from '../src/render.js'
+import { formatEvent, formatStreamingText, truncate } from '../src/render.js'
 
 /** Build a minimal event fixture; formatEvent only ever reads `.type`/`.data`. */
 function event(type: string, data: unknown): SessionEvent {
@@ -93,6 +93,16 @@ describe('formatEvent — assistant/message', () => {
       { replay: false },
     )
     expect(line).toBeUndefined()
+  })
+})
+
+describe('formatStreamingText', () => {
+  it('mirrors assistant/message framing for non-empty text', () => {
+    expect(formatStreamingText('Hello')).toBe('\nHello\n')
+  })
+
+  it('renders nothing for empty text', () => {
+    expect(formatStreamingText('')).toBeUndefined()
   })
 })
 

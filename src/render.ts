@@ -35,6 +35,14 @@ export function textOf(content: readonly ContentBlock[]): string {
 }
 
 /**
+ * Format the in-progress step's accumulated text, mirroring `assistant/message`'s
+ * framing so the line doesn't visually jump once it settles into `<Static>`.
+ */
+export function formatStreamingText(text: string): string | undefined {
+  return text === '' ? undefined : `\n${text}\n`
+}
+
+/**
  * Format one durable session event as a terminal line, or `undefined` for
  * events this viewer does not present. Unknown event types are silently
  * skipped: the log's vocabulary is merge-extensible and a transcript viewer

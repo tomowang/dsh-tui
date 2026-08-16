@@ -6,6 +6,19 @@ function event(seq: number): SessionEvent {
   return { type: 'user/message', seq, time: 0, data: { source: { kind: 'user' }, content: [] } } as unknown as SessionEvent
 }
 
+function chunkEvent(seq: number, turn: number, step: number, chunk: unknown): SessionEvent {
+  return { type: 'assistant/chunk', seq, time: 0, data: { turn, step, chunk } } as unknown as SessionEvent
+}
+
+function assistantMessageEvent(seq: number, turn: number, step: number): SessionEvent {
+  return {
+    type: 'assistant/message',
+    seq,
+    time: 0,
+    data: { turn, step, message: { role: 'assistant', content: [] } },
+  } as unknown as SessionEvent
+}
+
 describe('TuiStore construction', () => {
   it('seeds replayThrough from the last seeded event', () => {
     const store = new TuiStore({ events: [event(1), event(2), event(5)] })
@@ -41,6 +54,54 @@ describe('TuiStore.appendEvent', () => {
 
     expect(store.getSnapshot()).toBe(before)
     expect(listener).not.toHaveBeenCalled()
+  })
+})
+
+describe('TuiStore streaming', () => {
+  it('folds text-delta chunks into streaming.text without adding to events', () => {
+    const store = new TuiStore({ events: [] })
+
+    store.appendEvent(chunkEvent(1, 1, 1, { type: 'block-start', index: 0, blockType: 'text' }))
+    store.appendEvent(chunkEvent(2, 1, 1, { type: 'text-delta', index: 0, text: 'Hel' }))
+    store.appendEvent(chunkEvent(3, 1, 1, { type: 'text-delta', index: 0, text: 'lo' }))
+
+    const snapshot = store.getSnapshot()
+    expect(snapshot.streaming).toEqual({ turn: 1, step: 1, text: 'Hello' })
+    expect(snapshot.events).toEqual([])
+  })
+
+  it('resets the accumulator when turn/step changes', () => {
+    const store = new TuiStore({ events: [] })
+
+    store.appendEvent(chunkEvent(1, 1, 1, { type: 'block-start', index: 0, blockType: 'text' }))
+    store.appendEvent(chunkEvent(2, 1, 1, { type: 'text-delta', index: 0, text: 'first step' }))
+    store.appendEvent(chunkEvent(3, 1, 2, { type: 'block-start', index: 0, blockType: 'text' }))
+    store.appendEvent(chunkEvent(4, 1, 2, { type: 'text-delta', index: 0, text: 'second step' }))
+
+    expect(store.getSnapshot().streaming).toEqual({ turn: 1, step: 2, text: 'second step' })
+  })
+
+  it('assistant/message clears streaming and appends the settled event', () => {
+    const store = new TuiStore({ events: [] })
+
+    store.appendEvent(chunkEvent(1, 1, 1, { type: 'block-start', index: 0, blockType: 'text' }))
+    store.appendEvent(chunkEvent(2, 1, 1, { type: 'text-delta', index: 0, text: 'partial' }))
+    store.appendEvent(assistantMessageEvent(3, 1, 1))
+
+    const snapshot = store.getSnapshot()
+    expect(snapshot.streaming).toBeUndefined()
+    expect(snapshot.events.map(e => e.seq)).toEqual([3])
+  })
+
+  it('drops persisted assistant/chunk rows from the seeded events without seeding streaming', () => {
+    const store = new TuiStore({
+      events: [event(1), chunkEvent(2, 1, 1, { type: 'text-delta', index: 0, text: 'stale' }), assistantMessageEvent(3, 1, 1)],
+    })
+
+    const snapshot = store.getSnapshot()
+    expect(snapshot.events.map(e => e.seq)).toEqual([1, 3])
+    expect(snapshot.streaming).toBeUndefined()
+    expect(snapshot.replayThrough).toBe(3)
   })
 })
 

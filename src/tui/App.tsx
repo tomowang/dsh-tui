@@ -12,6 +12,7 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { TuiStore } from './store.js'
 import { Banner } from './Banner.js'
 import { EventLine } from './EventLine.js'
+import { StreamingLine } from './StreamingLine.js'
 import { StatusBar } from './StatusBar.js'
 import { StatsLine } from './StatsLine.js'
 import { QueuedIndicator } from './QueuedIndicator.js'
@@ -25,7 +26,7 @@ import { AgentPresetsOverlay } from './agentPresets/AgentPresetsOverlay.js'
 import { buildBannerText } from './bannerText.js'
 import { buildStatsLine, buildContextLine } from './statsFormat.js'
 import { commandQuery } from './commands.js'
-import { formatEvent } from '../render.js'
+import { formatEvent, formatStreamingText } from '../render.js'
 
 export type { TuiActions } from './PromptInput.js'
 
@@ -123,14 +124,26 @@ export function App({ store, actions, sessionId, provider, model, version, cwd, 
     }
     const noticeLines = state.notice === undefined ? 0 : state.notice.split('\n').length
     const queuedLines = state.queued.length
+    const streamingLines = state.streaming === undefined ? 0 : (formatStreamingText(state.streaming.text)?.split('\n').length ?? 0)
     const statusBarLines = 1
     const statsLines = statsLine === '' ? 0 : 1
     // 2 accounts for the prompt box's top/bottom border; promptLineCount is
     // its content rows, which grow with a multi-line draft.
     const promptLines = 2 + promptLineCount + commandMatchesCount
     const permissionLines = state.permission === undefined ? 0 : 1
-    return noticeLines + queuedLines + statusBarLines + statsLines + promptLines + permissionLines
-  }, [state.overlay, state.notice, state.queued.length, commandMatchesCount, promptLineCount, state.permission, statsLine, rows, staticLines])
+    return noticeLines + queuedLines + streamingLines + statusBarLines + statsLines + promptLines + permissionLines
+  }, [
+    state.overlay,
+    state.notice,
+    state.queued.length,
+    state.streaming,
+    commandMatchesCount,
+    promptLineCount,
+    state.permission,
+    statsLine,
+    rows,
+    staticLines,
+  ])
 
   // Ink appends a trailing newline to interactive frames (output + '\n'),
   // so we subtract 1 to ensure total rendered lines don't exceed terminal rows.
@@ -163,6 +176,7 @@ export function App({ store, actions, sessionId, provider, model, version, cwd, 
           <>
             {state.notice === undefined ? null : <Text>{state.notice}</Text>}
             <QueuedIndicator queued={state.queued} />
+            <StreamingLine streaming={state.streaming} />
             <StatusBar
               sessionId={sessionId}
               provider={provider}
