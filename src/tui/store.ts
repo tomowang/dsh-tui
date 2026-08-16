@@ -16,6 +16,7 @@ import type { ContextBreakdownProjection, ContextPressureProjection, TokenUsageP
 import type { DiscoveredModel, ProviderDraft, ProviderRow } from './modelProfile/types.js'
 import type { PluginRow } from './plugins/types.js'
 import type { AgentPresetRow } from './agentPresets/types.js'
+import type { ApprovalPromptState, QuestionPromptState } from './interaction/types.js'
 import { textOf } from '../render.js'
 
 /** Which pane of the `/model` overlay is showing. */
@@ -56,6 +57,8 @@ export type Overlay =
   | { readonly kind: 'context' }
   | { readonly kind: 'plugins'; readonly rows: readonly PluginRow[] }
   | { readonly kind: 'agentPresets'; readonly agentPresets: AgentPresetsOverlayState }
+  | { readonly kind: 'approval'; readonly approval: ApprovalPromptState }
+  | { readonly kind: 'userQuestion'; readonly userQuestion: QuestionPromptState }
 
 /** Whole-log figures for the status bar's stats line; each side is `undefined` without its projection unit mounted. */
 export interface StatsSnapshot {
@@ -270,6 +273,16 @@ export class TuiStore {
         agentPresets: { rows: [], selected: 0, current: init.current, blank: init.blank, busy: true, error: undefined },
       },
     })
+  }
+
+  /** Present one pending tool-approval decision, taking over the live region. */
+  openApproval(approval: ApprovalPromptState): void {
+    this.set({ overlay: { kind: 'approval', approval } })
+  }
+
+  /** Present one pending question, taking over the live region. */
+  openUserQuestion(userQuestion: QuestionPromptState): void {
+    this.set({ overlay: { kind: 'userQuestion', userQuestion } })
   }
 
   /** Close whichever overlay is open, restoring the normal prompt/status controls. */

@@ -224,6 +224,41 @@ describe('TuiStore overlay state machine', () => {
     expect(store.getSnapshot().overlay).toEqual({ kind: 'none' })
   })
 
+  it('openApproval opens the approval overlay with the given prompt', () => {
+    const store = new TuiStore({ events: [] })
+    const approval = { toolName: 'bash', callId: 'call-1', reason: 'runs a shell command' }
+
+    store.openApproval(approval)
+
+    expect(store.getSnapshot().overlay).toEqual({ kind: 'approval', approval })
+  })
+
+  it('openUserQuestion opens the question overlay with the given prompt', () => {
+    const store = new TuiStore({ events: [] })
+    const userQuestion = {
+      header: 'Confirm',
+      question: 'Proceed?',
+      detail: undefined,
+      options: [{ label: 'Yes', description: undefined }],
+      multiSelect: false,
+      approveLabel: undefined,
+      progress: undefined,
+    }
+
+    store.openUserQuestion(userQuestion)
+
+    expect(store.getSnapshot().overlay).toEqual({ kind: 'userQuestion', userQuestion })
+  })
+
+  it('openApproval replaces whatever overlay was previously open', () => {
+    const store = new TuiStore({ events: [] })
+    store.openContext()
+
+    store.openApproval({ toolName: 'bash', callId: undefined, reason: undefined })
+
+    expect(store.getSnapshot().overlay.kind).toBe('approval')
+  })
+
   it('openContext opens the context overlay', () => {
     const store = new TuiStore({ events: [] })
     store.openContext()

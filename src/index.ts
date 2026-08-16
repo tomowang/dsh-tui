@@ -32,11 +32,14 @@ import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type { SettingsPathOp, SettingsScope } from '@deepseek-ai/dsh-settings'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
+import type { ApprovalOutcome, ApprovalRequest } from '@deepseek-ai/dsh-user-approval'
+import { UserQuestionError } from '@deepseek-ai/dsh-user-questions'
+import type { AskUserQuestionAnswer, AskUserQuestionAnswerItem, AskUserQuestionRequest } from '@deepseek-ai/dsh-user-questions'
 // Empty type imports carry the loader Context merge for the mount await,
-// the cmdline Context merge for the appExit host value, the
-// permission-presets Context merge for ctx.permissionPresets, and the
-// sandbox-policy/user-approval SessionEventMap merges for the 'sandbox/mode'
-// and 'approval/policy' event types the permission-preset knobs write.
+// the cmdline Context merge for the appExit host value, and the
+// permission-presets Context merge for ctx.permissionPresets and the
+// 'sandbox/mode'/'approval/policy' event types the permission-preset knobs
+// write.
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-cmdline'
 import type {} from '@deepseek-ai/dsh-permission-presets'
@@ -46,7 +49,6 @@ import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import type {} from '@deepseek-ai/dsh-session-projection'
 import type {} from '@deepseek-ai/dsh-session-stats'
 import type {} from '@deepseek-ai/dsh-token-meter'
-import type {} from '@deepseek-ai/dsh-user-approval'
 import type { Instance } from 'ink'
 
 import { ensureSessionIdPrefix, stripSessionIdPrefix } from './sessionId.js'
@@ -58,6 +60,7 @@ import { readPackageVersion } from './version.js'
 import type { ProviderDraft, ProviderRow, StoredProviderProfile } from './tui/modelProfile/types.js'
 import type { PluginRow } from './tui/plugins/types.js'
 import type { AgentPresetRow } from './tui/agentPresets/types.js'
+import type { QuestionAnswer, QuestionOptionRow } from './tui/interaction/types.js'
 
 /** Stable Cordis plugin name. */
 export const name = 'tui'
@@ -477,6 +480,174 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
     closing: boolean
   }
 
+  // --- In-terminal approval/question answerers ------------------------------
+  // `ctx.approval`'s `approval/request` waterfall and `ctx.userQuestions`'
+  // provider seam are both Cordis-context-scoped (registered once for the
+  // plugin's whole lifetime), not per-session, so this queue lives outside
+  // `attachSession` and routes every answer through whichever session's
+  // store is current — a `/clear` mid-request still lands the prompt on the
+  // live screen. One shared FIFO backs both request kinds since they render
+  // into the same single overlay slot.
+  type PendingInteraction =
+    | {
+        readonly kind: 'approval'
+        readonly toolName: string
+        readonly callId: string | undefined
+        readonly reason: string | undefined
+        settle(outcome: ApprovalOutcome): void
+      }
+    | {
+        readonly kind: 'question'
+        readonly header: string | undefined
+        readonly question: string
+        readonly detail: string | undefined
+        readonly options: readonly QuestionOptionRow[]
+        readonly multiSelect: boolean
+        readonly approveLabel: string | undefined
+        readonly progress: string | undefined
+        settle(answer: QuestionAnswer): void
+      }
+
+  const interactionQueue: PendingInteraction[] = []
+  let activeInteraction: PendingInteraction | undefined
+
+  /** Show the next queued interaction, or close the overlay once the queue drains. */
+  function showNextInteraction(): void {
+    if (activeInteraction !== undefined) return
+    const next = interactionQueue.shift()
+    activeInteraction = next
+    if (next === undefined) {
+      current.store.closeOverlay()
+      return
+    }
+    if (next.kind === 'approval') {
+      current.store.openApproval({ toolName: next.toolName, callId: next.callId, reason: next.reason })
+    } else {
+      current.store.openUserQuestion({
+        header: next.header,
+        question: next.question,
+        detail: next.detail,
+        options: next.options,
+        multiSelect: next.multiSelect,
+        approveLabel: next.approveLabel,
+        progress: next.progress,
+      })
+    }
+  }
+
+  /** Queue one interaction, showing it immediately if the overlay is free. */
+  function enqueueInteraction(item: PendingInteraction): void {
+    interactionQueue.push(item)
+    showNextInteraction()
+  }
+
+  /** Drop a not-yet-shown interaction from the queue, or clear+advance past the active one — shared by a settled answer and a signal abort. */
+  function retireInteraction(item: PendingInteraction): void {
+    const index = interactionQueue.indexOf(item)
+    if (index !== -1) {
+      interactionQueue.splice(index, 1)
+      return
+    }
+    if (activeInteraction === item) {
+      activeInteraction = undefined
+      showNextInteraction()
+    }
+  }
+
+  // Bare Cordis event: fires only from inside a mounted `ApprovalService`, so
+  // registering it costs nothing on a profile that composes none. Always
+  // claims the request (never calls `next()`) since this answerer is the
+  // interactive channel a deployment would compose it for.
+  ctx.on('approval/request', async (req: ApprovalRequest) => {
+    return new Promise<ApprovalOutcome>(resolve => {
+      if (req.signal?.aborted) {
+        resolve('cancelled')
+        return
+      }
+      let settled = false
+      const settleOutcome = (outcome: ApprovalOutcome): void => {
+        if (settled) return
+        settled = true
+        req.signal?.removeEventListener('abort', onAbort)
+        retireInteraction(item)
+        resolve(outcome)
+      }
+      const onAbort = (): void => settleOutcome('cancelled')
+      const item: PendingInteraction = {
+        kind: 'approval',
+        toolName: req.toolName,
+        callId: req.callId,
+        reason: req.reason,
+        settle: settleOutcome,
+      }
+      req.signal?.addEventListener('abort', onAbort, { once: true })
+      enqueueInteraction(item)
+    })
+  })
+
+  // Same optional-service pattern: a profile without a mounted user-questions
+  // seam just leaves `ask_user_question`/`exit_plan_mode` calls to whatever
+  // that seam's own no-provider behavior is, instead of refusing to start.
+  const userQuestionsSvc = ctx.get('userQuestions')
+  if (userQuestionsSvc !== undefined) {
+    ctx.effect(() =>
+      userQuestionsSvc.registerProvider({
+        ask(request: AskUserQuestionRequest): Promise<AskUserQuestionAnswer> {
+          return new Promise<AskUserQuestionAnswer>((resolve, reject) => {
+            const answers: AskUserQuestionAnswerItem[] = []
+            let index = 0
+            let settled = false
+            let activeItem: PendingInteraction | undefined
+
+            const fail = (): void => {
+              if (settled) return
+              settled = true
+              request.signal?.removeEventListener('abort', fail)
+              if (activeItem !== undefined) retireInteraction(activeItem)
+              reject(new UserQuestionError('ask_user_question was interrupted before the user answered', 'ASK_ABORTED'))
+            }
+            request.signal?.addEventListener('abort', fail, { once: true })
+
+            const askNext = (): void => {
+              const question = request.questions[index]
+              if (question === undefined) {
+                settled = true
+                request.signal?.removeEventListener('abort', fail)
+                resolve({ answers })
+                return
+              }
+              const item: PendingInteraction = {
+                kind: 'question',
+                header: question.header,
+                question: question.question,
+                detail: question.detail,
+                options: (question.options ?? []).map(option => ({ label: option.label, description: option.description })),
+                multiSelect: question.multiSelect ?? false,
+                approveLabel: question.intent?.approve,
+                progress: request.questions.length > 1 ? `Question ${index + 1} of ${request.questions.length}` : undefined,
+                settle(answer) {
+                  if (settled) return
+                  activeItem = undefined
+                  retireInteraction(item)
+                  answers.push({
+                    id: question.id,
+                    selected: [...answer.selected],
+                    ...(answer.custom === undefined ? {} : { custom: answer.custom }),
+                  })
+                  index += 1
+                  askNext()
+                },
+              }
+              activeItem = item
+              enqueueInteraction(item)
+            }
+            askNext()
+          })
+        },
+      }),
+    )
+  }
+
   // Owned here (outside the Ink tree) rather than inside PromptInput so `/clear`'s
   // remount doesn't lose the reader's up/down-arrow recall. Seeded from the
   // settings-backed history namespace (when mounted) so recall also survives
@@ -771,6 +942,15 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
           .catch((error: unknown) => {
             store.updateAgentPresets({ busy: false, error: error instanceof Error ? error.message : String(error) })
           })
+      },
+
+      answerApproval(outcome) {
+        if (activeInteraction?.kind !== 'approval') return
+        activeInteraction.settle(outcome)
+      },
+      answerQuestion(answer) {
+        if (activeInteraction?.kind !== 'question') return
+        activeInteraction.settle(answer)
       },
     }
 

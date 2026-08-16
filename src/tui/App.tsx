@@ -23,6 +23,8 @@ import { TrajectoryOverlay } from './trajectory/TrajectoryOverlay.js'
 import { ContextOverlay } from './context/ContextOverlay.js'
 import { PluginsOverlay } from './plugins/PluginsOverlay.js'
 import { AgentPresetsOverlay } from './agentPresets/AgentPresetsOverlay.js'
+import { ApprovalOverlay } from './interaction/ApprovalOverlay.js'
+import { QuestionOverlay } from './interaction/QuestionOverlay.js'
 import { buildBannerText } from './bannerText.js'
 import { buildStatsLine, buildContextLine } from './statsFormat.js'
 import { commandQuery } from './commands.js'
@@ -138,6 +140,21 @@ export function App({
     if (state.overlay.kind === 'agentPresets') {
       return Math.max(10, rows - staticLines - 1)
     }
+    if (state.overlay.kind === 'approval') {
+      const reasonLine = state.overlay.approval.reason === undefined ? 0 : 1
+      // title + tool line + reason? + 2 choices + footer
+      return 1 + 1 + reasonLine + 2 + 1
+    }
+    if (state.overlay.kind === 'userQuestion') {
+      const q = state.overlay.userQuestion
+      const detailLineCount = q.detail === undefined ? 0 : q.detail.split('\n').length
+      const detailLines = q.detail === undefined ? 0 : Math.min(60, detailLineCount) + (detailLineCount > 60 ? 1 : 0) + 2
+      const optionLines = q.options.reduce((total, option) => total + 1 + (option.description === undefined ? 0 : 1), 0)
+      const otherLine = q.options.length === 0 ? 0 : 1
+      const customLine = q.options.length === 0 ? 1 : 0
+      // header + question + detail + options + "Other…" + free-text field? + footer
+      return 1 + 1 + detailLines + optionLines + otherLine + customLine + 1
+    }
     const noticeLines = state.notice === undefined ? 0 : state.notice.split('\n').length
     const queuedLines = state.queued.length
     const streamingLines = state.streaming === undefined ? 0 : (formatStreamingText(state.streaming.text)?.split('\n').length ?? 0)
@@ -188,6 +205,10 @@ export function App({
           <PluginsOverlay rows={state.overlay.rows} availableRows={dynamicLines} actions={actions} />
         ) : state.overlay.kind === 'agentPresets' ? (
           <AgentPresetsOverlay agentPresets={state.overlay.agentPresets} actions={actions} />
+        ) : state.overlay.kind === 'approval' ? (
+          <ApprovalOverlay approval={state.overlay.approval} actions={actions} />
+        ) : state.overlay.kind === 'userQuestion' ? (
+          <QuestionOverlay question={state.overlay.userQuestion} actions={actions} />
         ) : (
           <>
             {state.notice === undefined ? null : <Text>{state.notice}</Text>}

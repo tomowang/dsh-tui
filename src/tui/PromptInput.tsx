@@ -32,6 +32,7 @@ import { Box, Text, useInput } from 'ink'
 import type { AgentStatus } from '@deepseek-ai/dsh-agent'
 import { commandQuery, matchSlashCommands, runSlashCommand, SLASH_COMMAND_WIDTH } from './commands.js'
 import type { ProviderDraft, ProviderRow } from './modelProfile/types.js'
+import type { QuestionAnswer } from './interaction/types.js'
 
 export interface TuiActions {
   /** Route free text to steering (running) or follow-up (idle). */
@@ -95,6 +96,11 @@ export interface TuiActions {
   selectAgentPresetRow(index: number): void
   /** Apply a different agent preset to the current (blank) session. */
   applyAgentPreset(id: string): void
+
+  /** Answer the pending in-terminal tool-approval prompt. */
+  answerApproval(outcome: 'allowed-once' | 'rejected'): void
+  /** Answer the pending in-terminal question prompt. */
+  answerQuestion(answer: QuestionAnswer): void
 }
 
 export interface PromptInputProps {

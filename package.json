@@ -59,7 +59,8 @@
     "@deepseek-ai/dsh-settings": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-token-meter": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-tools": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-user-approval": "0.0.1-rc.1"
+    "@deepseek-ai/dsh-user-approval": "0.0.1-rc.1",
+    "@deepseek-ai/dsh-user-questions": "^0.1.0-rc.6"
   },
   "dependencies": {
     "@deepseek-ai/dsh-cmdline": "^0.1.0-rc.6",
@@ -90,6 +91,7 @@
     "@deepseek-ai/dsh-token-meter": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-tools": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-user-approval": "0.0.1-rc.1",
+    "@deepseek-ai/dsh-user-questions": "^0.1.0-rc.6",
     "@eslint/js": "^10.0.1",
     "@types/node": "^24.0.0",
     "@types/react": "^19.2.18",
