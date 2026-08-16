@@ -191,6 +191,49 @@ describe('TuiStore setters without an equality guard', () => {
   })
 })
 
+describe('TuiStore shell runs', () => {
+  it('startShellRun opens a live run and returns its id', () => {
+    const store = new TuiStore({ events: [] })
+    const id = store.startShellRun('ls')
+    expect(store.getSnapshot().shellRun).toEqual({ id, command: 'ls', output: '' })
+    expect(store.getSnapshot().shellHistory).toEqual([])
+  })
+
+  it('appendShellOutput accumulates onto the live run', () => {
+    const store = new TuiStore({ events: [] })
+    const id = store.startShellRun('ls')
+    store.appendShellOutput(id, 'a.txt\n')
+    store.appendShellOutput(id, 'b.txt\n')
+    expect(store.getSnapshot().shellRun?.output).toBe('a.txt\nb.txt\n')
+  })
+
+  it('appendShellOutput ignores a stale id once the run has settled', () => {
+    const store = new TuiStore({ events: [] })
+    const id = store.startShellRun('ls')
+    store.finishShellRun(id, 0)
+    store.appendShellOutput(id, 'too late')
+    expect(store.getSnapshot().shellRun).toBeUndefined()
+    expect(store.getSnapshot().shellHistory[0].output).toBe('')
+  })
+
+  it('finishShellRun settles the live run into shellHistory, ordered after the events seen so far', () => {
+    const store = new TuiStore({ events: [event(1), event(2)] })
+    const id = store.startShellRun('ls')
+    store.appendShellOutput(id, 'a.txt\n')
+
+    store.finishShellRun(id, 0)
+
+    expect(store.getSnapshot().shellRun).toBeUndefined()
+    expect(store.getSnapshot().shellHistory).toEqual([{ id, command: 'ls', output: 'a.txt\n', exitCode: 0, afterSeq: 2 }])
+  })
+
+  it('finishShellRun is a no-op for an id that is not the current live run', () => {
+    const store = new TuiStore({ events: [] })
+    store.finishShellRun(999, 0)
+    expect(store.getSnapshot().shellHistory).toEqual([])
+  })
+})
+
 describe('TuiStore.subscribe', () => {
   it('stops notifying after the returned disposer is called', () => {
     const store = new TuiStore({ events: [] })

@@ -24,6 +24,14 @@
  * Pressing Ctrl+C or Ctrl+D twice in a row while the line is empty exits; a
  * single press only arms the other and shows a hint, and the arm expires
  * after a short timeout.
+ *
+ * A leading `!` typed at an empty prompt is Claude Code's shell-mode
+ * convention: it switches Enter to run the line as a local shell command
+ * (`TuiActions.runShell`, resolved outside the agent entirely — see
+ * `src/index.ts`) instead of sending it to the agent, and the prompt box's
+ * border/marker turn yellow for the duration. Backspace on an empty
+ * shell-mode buffer (or Esc) exits back to normal mode, since the `!` itself
+ * is consumed rather than inserted into `value`.
  * @module @tomowang/dsh-tui/tui/PromptInput
  */
 
@@ -37,6 +45,8 @@ import type { QuestionAnswer } from './interaction/types.js'
 export interface TuiActions {
   /** Route free text to steering (running) or follow-up (idle). */
   send(text: string): void
+  /** Run one local shell command (not sent to the agent) and print its output to the transcript. */
+  runShell(command: string): void
   /** Cancel the active turn. */
   cancel(): void
   /** Flush and exit. */
@@ -199,9 +209,11 @@ export interface PromptState {
   readonly historyIndex: number | null
   /** The in-progress draft, stashed when history recall starts so Down can restore it. */
   readonly draft: string
+  /** True while a leading `!` (typed at an empty prompt) has switched Enter to run a local shell command instead of sending to the agent. */
+  readonly shellMode: boolean
 }
 
-export const initialState: PromptState = { value: '', cursor: 0, selectedIndex: 0, historyIndex: null, draft: '' }
+export const initialState: PromptState = { value: '', cursor: 0, selectedIndex: 0, historyIndex: null, draft: '', shellMode: false }
 
 export type Action =
   | { type: 'insert'; text: string }
@@ -223,6 +235,8 @@ export type Action =
   | { type: 'newlineFromBackslash' }
   | { type: 'reset' }
   | { type: 'completeCommand'; text: string }
+  | { type: 'enterShellMode' }
+  | { type: 'exitShellMode' }
 
 export function bufferReducer(state: PromptState, action: Action): PromptState {
   switch (action.type) {
@@ -328,6 +342,10 @@ export function bufferReducer(state: PromptState, action: Action): PromptState {
       return initialState
     case 'completeCommand':
       return { ...state, value: action.text, cursor: action.text.length }
+    case 'enterShellMode':
+      return { ...state, shellMode: true }
+    case 'exitShellMode':
+      return { ...state, shellMode: false }
   }
 }
 
@@ -341,7 +359,9 @@ export function PromptInput({ status, actions, state, dispatch, history }: Promp
     }
   }, [])
 
-  const { isCommandMode, matches } = commandQuery(state.value)
+  // The `/` command palette never applies in shell mode, where a leading
+  // slash is just a path character in the command being typed.
+  const { isCommandMode, matches } = state.shellMode ? { isCommandMode: false, matches: [] } : commandQuery(state.value)
   const selected = matches.length === 0 ? 0 : Math.min(state.selectedIndex, matches.length - 1)
   const lines = state.value.split('\n')
 
@@ -363,12 +383,17 @@ export function PromptInput({ status, actions, state, dispatch, history }: Promp
 
   function submit(): void {
     const trimmed = state.value.trim()
+    const shellMode = state.shellMode
     const selectedAtSubmit = selected
     dispatch({ type: 'reset' })
     if (trimmed === '') return
     if (history.at(-1) !== trimmed) {
       history.push(trimmed)
       actions.recordHistory(trimmed)
+    }
+    if (shellMode) {
+      actions.runShell(trimmed)
+      return
     }
     const commandMatches = trimmed.startsWith('/') && !/\s/.test(trimmed) ? matchSlashCommands(trimmed) : []
     if (commandMatches.length > 0) {
@@ -380,6 +405,19 @@ export function PromptInput({ status, actions, state, dispatch, history }: Promp
   }
 
   useInput((input, key) => {
+    // A leading `!` at an empty prompt switches Enter to run a local shell
+    // command instead of sending to the agent, mirroring Claude Code's bash
+    // mode. The `!` itself is consumed rather than inserted, so Backspace on
+    // an empty shell-mode buffer (which would otherwise no-op) exits it —
+    // same convention as Ctrl+C/Ctrl+D's exit-arming above.
+    if (!state.shellMode && input === '!' && state.value === '' && !key.ctrl && !key.meta) {
+      dispatch({ type: 'enterShellMode' })
+      return
+    }
+    if (state.shellMode && (key.escape || (key.backspace && state.value === ''))) {
+      dispatch({ type: 'exitShellMode' })
+      return
+    }
     // Shift+Tab cycles the permission preset, mirroring Claude Code's mode
     // switcher. Terminals send the classic `\x1b[Z` sequence, which Ink
     // reports as `key.tab` with `key.shift` set — distinct from plain Tab.
@@ -523,10 +561,11 @@ export function PromptInput({ status, actions, state, dispatch, history }: Promp
         </Box>
       )}
       {armedKey !== null && <Text dimColor>Press Ctrl+{armedKey.toUpperCase()} again to exit</Text>}
-      <Box borderStyle="round" borderColor="white" paddingX={1} flexDirection="column">
+      {state.shellMode && <Text color="yellow">! shell mode — Enter runs the command, Esc/Backspace exits</Text>}
+      <Box borderStyle="round" borderColor={state.shellMode ? 'yellow' : 'white'} paddingX={1} flexDirection="column">
         {lines.map((line, i) => (
           <Box key={i}>
-            <Text>{i === 0 ? '› ' : '  '}</Text>
+            <Text color={state.shellMode ? 'yellow' : undefined}>{i === 0 ? (state.shellMode ? '! ' : '› ') : '  '}</Text>
             {renderLineContent(line, i === cursorRow ? cursorCol : null)}
           </Box>
         ))}

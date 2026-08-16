@@ -54,6 +54,26 @@ export function formatStreamingText(text: string): string | undefined {
   return text === '' ? undefined : `\n${text}\n`
 }
 
+/** One local shell-escape run's header + output lines, shared by the settled and in-flight renderers below. `exitCode` is `null` while still running. */
+function formatShellLines(command: string, output: string, exitCode: number | null): string[] {
+  const lines = [`${yellow('!')} ${command}`]
+  if (output !== '') lines.push(...splitLines(output).map(dim))
+  if (exitCode !== null) lines.push(exitCode === 0 ? dim(`[exit ${exitCode}]`) : red(`[exit ${exitCode}]`))
+  return lines
+}
+
+/** Format one settled local shell-escape run (`!` prompt-mode) for the permanent transcript, mirroring a `terminal` tool card. */
+export function formatShellRun(command: string, output: string, exitCode: number | null): string {
+  const lines = capLines(formatShellLines(command, output, exitCode), MAX_CARD_LINES)
+  return `\n${lines.join('\n')}\n`
+}
+
+/** Format the in-progress shell-escape run's accumulated output for the live region, mirroring `formatStreamingText`'s settle-without-jump framing. */
+export function formatShellRunLive(command: string, output: string): string {
+  const lines = capLines(formatShellLines(command, output, null), MAX_CARD_LINES)
+  return `\n${lines.join('\n')}\n`
+}
+
 /** Parse a tool call's JSON-encoded arguments; malformed JSON can't be handed to a presenter. */
 function parseJson(text: string): { valid: true; value: unknown } | { valid: false } {
   try {

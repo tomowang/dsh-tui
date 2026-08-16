@@ -98,6 +98,23 @@ export interface StreamingState {
   readonly text: string
 }
 
+/** The in-flight local shell-escape run (`!` prompt-mode), mirroring `StreamingState`'s live-region role. */
+export interface ShellRunState {
+  readonly id: number
+  readonly command: string
+  readonly output: string
+}
+
+/** One settled local shell-escape run, ordered into the permanent transcript after every event observed by the time it finished. */
+export interface ShellRunRecord {
+  readonly id: number
+  readonly command: string
+  readonly output: string
+  readonly exitCode: number | null
+  /** The store's `lastSeq` at completion — sorts this record after every event seen so far and before any observed later. */
+  readonly afterSeq: number
+}
+
 /** One immutable snapshot of everything the TUI renders. */
 export interface TuiState {
   /** Session log so far, in append order. */
@@ -120,6 +137,10 @@ export interface TuiState {
   readonly preset: PresetState | undefined
   /** The in-flight step's accumulated text, or `undefined` when nothing is currently streaming. */
   readonly streaming: StreamingState | undefined
+  /** The in-flight local shell-escape run, or `undefined` when none is running. */
+  readonly shellRun: ShellRunState | undefined
+  /** Settled local shell-escape runs, in completion order, interleaved into the transcript via `afterSeq`. */
+  readonly shellHistory: readonly ShellRunRecord[]
 }
 
 const CLOSED_OVERLAY: Overlay = { kind: 'none' }
@@ -161,6 +182,8 @@ export class TuiStore {
       stats: EMPTY_STATS,
       preset: undefined,
       streaming: undefined,
+      shellRun: undefined,
+      shellHistory: [],
     }
   }
 
@@ -229,6 +252,31 @@ export class TuiStore {
 
   setPreset(preset: PresetState | undefined): void {
     this.set({ preset })
+  }
+
+  private shellRunSeq = 0
+
+  /** Begin one local shell-escape run; its output accumulates via `appendShellOutput` until `finishShellRun` settles it into the transcript. */
+  startShellRun(command: string): number {
+    const id = ++this.shellRunSeq
+    this.set({ shellRun: { id, command, output: '' } })
+    return id
+  }
+
+  /** Append one chunk of stdout/stderr to the in-flight run; a no-op once it's settled or superseded by a later run. */
+  appendShellOutput(id: number, chunk: string): void {
+    if (this.state.shellRun?.id !== id) return
+    this.set({ shellRun: { ...this.state.shellRun, output: this.state.shellRun.output + chunk } })
+  }
+
+  /** Settle the in-flight run into the permanent transcript; a no-op once it's already settled or superseded. */
+  finishShellRun(id: number, exitCode: number | null): void {
+    if (this.state.shellRun?.id !== id) return
+    const { command, output } = this.state.shellRun
+    this.set({
+      shellRun: undefined,
+      shellHistory: [...this.state.shellHistory, { id, command, output, exitCode, afterSeq: this.lastSeq }],
+    })
   }
 
   /** Open the `/model` overlay to a fresh, loading provider list. */

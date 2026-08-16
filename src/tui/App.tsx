@@ -9,10 +9,11 @@
 import { useMemo, useReducer, useSyncExternalStore } from 'react'
 import { Box, Static, Text, useStdout, useWindowSize } from 'ink'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import type { TuiStore } from './store.js'
+import type { TuiStore, ShellRunRecord } from './store.js'
 import { Banner } from './Banner.js'
 import { EventLine } from './EventLine.js'
 import { StreamingLine } from './StreamingLine.js'
+import { ShellRunLine, LiveShellRunLine } from './ShellRunLine.js'
 import { StatusBar } from './StatusBar.js'
 import { StatsLine } from './StatsLine.js'
 import { QueuedIndicator } from './QueuedIndicator.js'
@@ -28,7 +29,7 @@ import { QuestionOverlay } from './interaction/QuestionOverlay.js'
 import { buildBannerText } from './bannerText.js'
 import { buildStatsLine, buildContextLine } from './statsFormat.js'
 import { commandQuery } from './commands.js'
-import { formatEvent, formatStreamingText, type RenderOptions } from '../render.js'
+import { formatEvent, formatStreamingText, formatShellRun, formatShellRunLive, type RenderOptions } from '../render.js'
 
 export type { TuiActions } from './PromptInput.js'
 
@@ -37,8 +38,9 @@ export type { TuiActions } from './PromptInput.js'
 // of coexisting. The banner therefore has to share the one Static's items
 // array with the session events rather than getting its own block.
 type StaticItem =
-  | { readonly kind: 'banner' }
-  | { readonly kind: 'event'; readonly event: SessionEvent; readonly replay: boolean }
+  | { readonly kind: 'banner'; readonly sortKey: number }
+  | { readonly kind: 'event'; readonly event: SessionEvent; readonly replay: boolean; readonly sortKey: number }
+  | { readonly kind: 'shell'; readonly run: ShellRunRecord; readonly sortKey: number }
 
 export interface AppProps {
   readonly store: TuiStore
@@ -61,6 +63,10 @@ function countEventLines(event: SessionEvent, replay: boolean, getTool: RenderOp
   const formatted = formatEvent(event, { replay, getTool, getToolCall })
   if (formatted === undefined || formatted === '') return 0
   return formatted.split('\n').length
+}
+
+function countShellRunLines(run: ShellRunRecord): number {
+  return formatShellRun(run.command, run.output, run.exitCode).split('\n').length
 }
 
 export function App({
@@ -87,27 +93,40 @@ export function App({
   // one commit behind, sizing the spacer for the *previous* frame's dropdown
   // and overflowing the terminal for one frame when e.g. `/` is typed.
   const [promptState, promptDispatch] = useReducer(bufferReducer, initialState)
-  const commandMatchesCount = useMemo(() => commandQuery(promptState.value).matches.length, [promptState.value])
+  const commandMatchesCount = useMemo(
+    () => (promptState.shellMode ? 0 : commandQuery(promptState.value).matches.length),
+    [promptState.value, promptState.shellMode],
+  )
   const promptLineCount = useMemo(() => promptState.value.split('\n').length, [promptState.value])
 
-  // The banner is a fixed item 0; events only ever append after it, so
-  // Static's index-based "already printed" bookkeeping stays correct even
-  // though this array is rebuilt (with a fresh reference) on every render.
-  const items = useMemo<StaticItem[]>(
-    () => [
-      { kind: 'banner' },
-      ...state.events.map(event => ({ kind: 'event' as const, event, replay: event.seq <= state.replayThrough })),
-    ],
-    [state.events, state.replayThrough],
-  )
+  // The banner is a fixed item 0; events and settled shell runs are merged by
+  // `sortKey` (an event's `seq`, or a shell run's `afterSeq` — the highest
+  // `seq` observed by the time it finished — tie-broken by its own id) so a
+  // `!` command interleaves with the transcript in true completion order.
+  // That key is assigned once and never changes for an already-rendered
+  // item, so the merged/sorted array's already-printed prefix stays stable
+  // across renders even though the array itself is rebuilt every time —
+  // satisfying Static's append-only requirement.
+  const items = useMemo<StaticItem[]>(() => {
+    const eventItems: StaticItem[] = state.events.map(event => ({
+      kind: 'event',
+      event,
+      replay: event.seq <= state.replayThrough,
+      sortKey: event.seq,
+    }))
+    const shellItems: StaticItem[] = state.shellHistory.map(run => ({ kind: 'shell', run, sortKey: run.afterSeq + run.id * 1e-6 }))
+    const banner: StaticItem = { kind: 'banner', sortKey: -1 }
+    return [banner, ...eventItems, ...shellItems].sort((a, b) => a.sortKey - b.sortKey)
+  }, [state.events, state.replayThrough, state.shellHistory])
 
   const staticLines = useMemo(() => {
     const bannerLines = buildBannerText({ version, provider, model, cwd }, columns).split('\n').length
     const eventLines = state.events.reduce((total, event) => {
       return total + countEventLines(event, event.seq <= state.replayThrough, getTool, getToolCall)
     }, 0)
-    return bannerLines + eventLines
-  }, [version, provider, model, cwd, columns, state.events, state.replayThrough, getTool, getToolCall])
+    const shellLines = state.shellHistory.reduce((total, run) => total + countShellRunLines(run), 0)
+    return bannerLines + eventLines + shellLines
+  }, [version, provider, model, cwd, columns, state.events, state.replayThrough, getTool, getToolCall, state.shellHistory])
 
   const statsLine = useMemo(() => {
     const stats = buildStatsLine(state.stats.sessionStats, state.stats.tokenUsage)
@@ -158,18 +177,20 @@ export function App({
     const noticeLines = state.notice === undefined ? 0 : state.notice.split('\n').length
     const queuedLines = state.queued.length
     const streamingLines = state.streaming === undefined ? 0 : (formatStreamingText(state.streaming.text)?.split('\n').length ?? 0)
+    const shellRunLines = state.shellRun === undefined ? 0 : formatShellRunLive(state.shellRun.command, state.shellRun.output).split('\n').length
     const statusBarLines = 1
     const statsLines = statsLine === '' ? 0 : 1
     // 2 accounts for the prompt box's top/bottom border; promptLineCount is
     // its content rows, which grow with a multi-line draft.
     const promptLines = 2 + promptLineCount + commandMatchesCount
     const permissionLines = state.permission === undefined ? 0 : 1
-    return noticeLines + queuedLines + streamingLines + statusBarLines + statsLines + promptLines + permissionLines
+    return noticeLines + queuedLines + streamingLines + shellRunLines + statusBarLines + statsLines + promptLines + permissionLines
   }, [
     state.overlay,
     state.notice,
     state.queued.length,
     state.streaming,
+    state.shellRun,
     commandMatchesCount,
     promptLineCount,
     state.permission,
@@ -188,6 +209,8 @@ export function App({
         {item =>
           item.kind === 'banner' ? (
             <Banner key="banner" version={version} provider={provider} model={model} cwd={cwd} columns={columns} />
+          ) : item.kind === 'shell' ? (
+            <ShellRunLine key={`shell-${item.run.id}`} run={item.run} />
           ) : (
             <EventLine key={item.event.seq} event={item.event} replay={item.replay} getTool={getTool} getToolCall={getToolCall} />
           )
@@ -214,6 +237,7 @@ export function App({
             {state.notice === undefined ? null : <Text>{state.notice}</Text>}
             <QueuedIndicator queued={state.queued} />
             <StreamingLine streaming={state.streaming} />
+            <LiveShellRunLine run={state.shellRun} />
             <StatusBar
               sessionId={sessionId}
               provider={provider}

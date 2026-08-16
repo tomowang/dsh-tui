@@ -12,6 +12,7 @@
  * @module @tomowang/dsh-tui
  */
 
+import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { FiberState, type Context } from '@deepseek-ai/cordis'
@@ -771,6 +772,30 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
       },
       cancel() {
         agent.cancel({ kind: 'user' })
+      },
+      runShell(command) {
+        // A local shell escape (Claude Code-style `!` bash mode): runs
+        // outside the agent loop entirely, so its output is never appended
+        // to the session log — only to this store's own display-only
+        // transcript. stdin is not wired up (interactive/full-screen
+        // commands aren't supported), matching a one-shot command runner.
+        const id = store.startShellRun(command)
+        const shell = process.env.SHELL ?? '/bin/sh'
+        try {
+          const child = spawn(shell, ['-c', command], { cwd: process.cwd(), stdio: ['ignore', 'pipe', 'pipe'] })
+          child.stdout.on('data', (chunk: Buffer) => store.appendShellOutput(id, chunk.toString()))
+          child.stderr.on('data', (chunk: Buffer) => store.appendShellOutput(id, chunk.toString()))
+          child.on('error', (error) => {
+            store.appendShellOutput(id, `${error.message}\n`)
+            store.finishShellRun(id, null)
+          })
+          child.on('close', (code) => {
+            store.finishShellRun(id, code)
+          })
+        } catch (error) {
+          store.appendShellOutput(id, `${error instanceof Error ? error.message : String(error)}\n`)
+          store.finishShellRun(id, null)
+        }
       },
       shutdown() {
         void shutdown()

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { ToolCallView, ToolDefinition, ToolResultView } from '@deepseek-ai/dsh-tools'
-import { formatEvent, formatStreamingText, truncate, type RenderOptions } from '../src/render.js'
+import { formatEvent, formatShellRun, formatShellRunLive, formatStreamingText, truncate, type RenderOptions } from '../src/render.js'
 
 /** Build a minimal event fixture; formatEvent only ever reads `.type`/`.data`. */
 function event(type: string, data: unknown): SessionEvent {
@@ -544,5 +544,29 @@ describe('formatEvent — unhandled types', () => {
   it('falls through to undefined for a merge-extensible type this viewer does not present', () => {
     const line = formatEvent(event('todo/write', { todos: [] }), { replay: false })
     expect(line).toBeUndefined()
+  })
+})
+
+describe('formatShellRun', () => {
+  it('includes the command, output, and a clean exit code', () => {
+    const line = formatShellRun('ls', 'a.txt\nb.txt\n', 0)
+    expect(line).toContain('ls')
+    expect(line).toContain('a.txt')
+    expect(line).toContain('b.txt')
+    expect(line).toContain('[exit 0]')
+  })
+
+  it('omits the output section for an empty-output run', () => {
+    const line = formatShellRun('true', '', 0)
+    expect(line.split('\n').filter(l => l !== '')).toHaveLength(2)
+  })
+})
+
+describe('formatShellRunLive', () => {
+  it('shows the command and accumulated output without an exit line', () => {
+    const line = formatShellRunLive('ls', 'a.txt\n')
+    expect(line).toContain('ls')
+    expect(line).toContain('a.txt')
+    expect(line).not.toContain('[exit')
   })
 })
