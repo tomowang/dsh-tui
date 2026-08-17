@@ -1,5 +1,10 @@
 # dsh-tui
 
+[![build status](https://github.com/tomowang/dsh-tui/actions/workflows/ci.yml/badge.svg)](https://github.com/tomowang/dsh-tui/actions/workflows/ci.yml)
+[![npm version](https://img.shields.io/npm/v/%40tomowang%2Fdsh-tui.svg)](https://www.npmjs.com/package/@tomowang/dsh-tui)
+[![license](https://img.shields.io/npm/l/%40tomowang%2Fdsh-tui.svg)](LICENSE)
+[![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+
 An open-source terminal front door for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`).
 
 `@tomowang/dsh-tui` is an **out-of-tree mode bundle**: it stacks on `@deepseek-ai/dsh-base` exactly like the shipped `dsh-web-app` and `dsh-headless` bundles do, but drives the agent from your terminal instead of a browser. The package is both a Cordis plugin (terminal input and presentation) and a dsh bundle (`dsh.bundle.patch` in `package.json` points at [`cordis.patch.yml`](cordis.patch.yml)); everything else — model adapters, tools, session persistence, sandbox and approval policy — stays in `dsh-base` and remains patchable underneath.
