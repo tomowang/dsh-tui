@@ -31,6 +31,10 @@ dsh --profile tui --dump-config   # inspect the composed plugin tree
 
 Both stdin and stdout must be real TTYs — `apply()` in `src/index.ts` throws loudly otherwise instead of degrading, so pipes/CI must use `dsh --profile headless`.
 
+## Keep docs in sync
+
+Before committing a feature (new/changed command, keybinding, overlay, or user-visible behavior), check whether `README.md` and this file describe the old behavior and update them in the same commit — not as a follow-up. `README.md` covers user-facing surface (Features, the terminal-commands/keyboard-shortcuts tables); this file's `## Architecture` and `## Current status / roadmap` cover implementation notes and the known-gaps list. A shipped feature still listed as a "known gap" here, or a new `/command`/shortcut missing from README's tables, counts as an incomplete change.
+
 ## Architecture
 
 **Two-plugin split (`src/startup.ts` → `src/index.ts`).** `tui-startup` parses this app's CLI flags (everything after the launcher's own args) via `dsh-cmdline`/commander and publishes them as an ordinary Cordis service (`TUI_STARTUP_SERVICE` / `tuiStartup`). The `tui` plugin injects that service rather than parsing argv itself — this mirrors how `dsh-headless` is structured and keeps startup-value resolution lazy/testable. The wiring between the two is declared in `cordis.patch.yml`, not in code.
