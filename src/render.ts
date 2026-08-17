@@ -9,6 +9,7 @@ import { diffLines } from 'diff'
 import type { CallId, ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { FileDiff, ToolCallView, ToolDefinition, ToolResult, ToolResultView } from '@deepseek-ai/dsh-tools'
+import { renderMarkdown } from './markdown.js'
 import { theme } from './tui/theme.js'
 
 /** Rendering context: replay walks history already in the log. */
@@ -67,7 +68,7 @@ export function textOf(content: readonly ContentBlock[]): string {
  * framing so the line doesn't visually jump once it settles into `<Static>`.
  */
 export function formatStreamingText(text: string): string | undefined {
-  return text === '' ? undefined : `\n${text}\n`
+  return text === '' ? undefined : `\n${renderMarkdown(text)}\n`
 }
 
 /** One local shell-escape run's header + output lines, shared by the settled and in-flight renderers below. `exitCode` is `null` while still running. */
@@ -301,7 +302,7 @@ export function formatEvent(event: SessionEvent, options: RenderOptions): string
     }
     case 'assistant/message': {
       const text = textOf(event.data.message.content)
-      return text === '' ? undefined : `\n${text}\n`
+      return text === '' ? undefined : `\n${renderMarkdown(text)}\n`
     }
     case 'tool/call': {
       return formatToolCall(event.data.name, event.data.arguments, options.getTool)
