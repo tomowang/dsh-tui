@@ -25,6 +25,9 @@ An open-source terminal front door for [DeepSeek Harness](https://github.com/dee
 - **`/model` provider management** — switch the active model, and add, edit, or delete custom LLM providers (route, base URL, API key, model discovery) without leaving the terminal.
 - **Agent presets** — start a fresh session on a given preset with `--agent-preset`, or browse and switch presets from `/presets` (fixed once the session's first turn has run).
 - **Session inspectors** — `/trajectory` for a turn/step event ledger with a detail view and filtering, `/context` for a context-window usage breakdown, `/plugins` for the loaded Cordis plugin tree and fiber state.
+- **Tool Cards overlay** — `/tools` or `Ctrl+O` opens a scrollable browser over the session's tool calls/results, letting a card expand past the transcript's fixed line cap to its full presentation instead of showing "…omitted".
+- **Reasoning display** — a model's reasoning/thinking content renders as a distinct dim `✦ thinking` block ahead of its visible answer, both while streaming and in settled transcript output.
+- **Markdown rendering** — assistant text with an unambiguous Markdown signal (fenced code, headers, lists, blockquotes, rules, tables, links, bold/strikethrough, inline code) is styled for the terminal; plain prose passes through untouched.
 - **Permission preset cycling** — `Shift+Tab` cycles `read-only` / `workspace-write` / `danger-full-access` / `custom`, shown live in the prompt area.
 - **In-terminal approvals and questions** — a tool call parked on an `ask` permission decision is answered right in the terminal (allow once / reject), and `ask_user_question`/plan-mode's plan review present as an option list with multi-select and free-text "Other…", `esc` to skip.
 - **Manual compaction** — `/compact` summarizes and compacts session history on demand.
@@ -66,6 +69,7 @@ Any row `--dump-config` prints — the model adapter, tool set, sandbox policy, 
 | `/model` | manage LLM provider profiles: switch model, add/edit/delete a custom provider |
 | `/presets` | view and switch agent presets (fixed once the session's first turn has run) |
 | `/trajectory` | browse the turn/step event ledger with a detail inspector and filter |
+| `/tools` | browse and expand tool cards past the transcript's line cap |
 | `/context` | show context-window usage as a bar-chart breakdown |
 | `/plugins` | show the loaded Cordis plugin tree and fiber state |
 | `/compact` | summarize and compact session history |
@@ -79,6 +83,7 @@ Any row `--dump-config` prints — the model adapter, tool set, sandbox policy, 
 | `Ctrl+C` | cancel a running turn; on an idle empty line, press twice within 2s to exit |
 | `Ctrl+D` | forward-delete; on an idle empty line, press twice within 2s to exit |
 | `Shift+Tab` | cycle the permission preset (`read-only` / `workspace-write` / `danger-full-access` / `custom`) |
+| `Ctrl+O` | open the Tool Cards overlay; `↑`/`↓` select a card, `Enter`/`Space` expand or collapse, `PgUp`/`PgDn`/`Home`/`End` scroll an expanded card, `Esc`/`q`/`Ctrl+O` close |
 | `!` (on an empty prompt) | enter shell mode: Enter runs the line as a local shell command; `Esc`/backspace-on-empty exits back to normal mode |
 | `@` | open the file-mention dropdown; `↑`/`↓` to move, `Tab`/`Enter` to insert the path, `Esc` to dismiss |
 | `Tab` | in `/command` mode, autocomplete the highlighted command |
