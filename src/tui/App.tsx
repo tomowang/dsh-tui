@@ -260,6 +260,7 @@ export function App({
               status={state.status}
               queuedCount={state.queued.length}
               presetLabel={state.preset?.current}
+              eventCount={state.events.length}
             />
             <PromptInput
               status={state.status}

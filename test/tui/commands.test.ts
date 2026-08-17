@@ -7,7 +7,6 @@ function stubActions(): TuiActions {
     send: vi.fn(),
     cancel: vi.fn(),
     shutdown: vi.fn(),
-    status: vi.fn(),
     help: vi.fn(),
     recordHistory: vi.fn(),
     clear: vi.fn(),
@@ -51,7 +50,7 @@ describe('matchSlashCommands', () => {
   })
 
   it('matches a command against its own full text', () => {
-    expect(matchSlashCommands('/status').map(c => c.command)).toEqual(['/status'])
+    expect(matchSlashCommands('/compact').map(c => c.command)).toEqual(['/compact'])
   })
 
   it('returns nothing for a non-matching query', () => {
@@ -82,13 +81,6 @@ describe('runSlashCommand', () => {
     const actions = stubActions()
     runSlashCommand('/help', actions)
     expect(actions.help).toHaveBeenCalledTimes(1)
-    expect(totalCalls(actions)).toBe(1)
-  })
-
-  it('dispatches /status to status', () => {
-    const actions = stubActions()
-    runSlashCommand('/status', actions)
-    expect(actions.status).toHaveBeenCalledTimes(1)
     expect(totalCalls(actions)).toBe(1)
   })
 

@@ -15,7 +15,7 @@ An open-source terminal front door for [DeepSeek Harness](https://github.com/dee
 
 ## Features
 
-- **Status bar** — session id, active LLM provider/model, current agent preset, live run state with spinner, and queued-message count.
+- **Status bar** — session id, active LLM provider/model, current agent preset, live run state with spinner, queued-message count, and logged event count.
 - **Stats line** — turn/step counts, LLM/tool wall time, TTFT and decode tok/s, cache-hit %, billed tokens, and a compact context-usage summary; sections hide themselves until there's data.
 - **`/model` provider management** — switch the active model, and add, edit, or delete custom LLM providers (route, base URL, API key, model discovery) without leaving the terminal.
 - **Agent presets** — start a fresh session on a given preset with `--agent-preset`, or browse and switch presets from `/presets` (fixed once the session's first turn has run).
@@ -68,7 +68,6 @@ Any row `--dump-config` prints — the model adapter, tool set, sandbox policy, 
 | `/context` | show context-window usage as a bar-chart breakdown |
 | `/plugins` | show the loaded Cordis plugin tree and fiber state |
 | `/compact` | summarize and compact session history |
-| `/status` | session id, run state, logged event count |
 | `/clear` | flush the current session and start a new one |
 | `/exit`, `/quit` | cancel, wait for idle, flush the session, exit |
 

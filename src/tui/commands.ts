@@ -20,7 +20,6 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
   { command: '/plugins', description: 'Show the loaded plugin tree' },
   { command: '/presets', description: 'Show and switch agent presets (only while the session is blank)' },
   { command: '/compact', description: 'Summarize and compact session history' },
-  { command: '/status', description: 'Show session status' },
   { command: '/clear', description: 'Clear the screen and start a new session' },
   { command: '/exit', description: 'Exit dsh-tui' },
   { command: '/quit', description: 'Exit dsh-tui' },
@@ -35,7 +34,7 @@ export function matchSlashCommands(query: string): readonly SlashCommand[] {
 
 export function commandQuery(value: string): { isCommandMode: boolean; matches: readonly SlashCommand[] } {
   // A trailing space (but no *internal* whitespace) still counts as command
-  // mode, so `"/status "` behaves like `value.trim() === '/status'`.
+  // mode, so `"/clear "` behaves like `value.trim() === '/clear'`.
   const query = value.trim()
   const isCommandMode = value.startsWith('/') && !/\s/.test(query)
   return { isCommandMode, matches: isCommandMode ? matchSlashCommands(query) : [] }
@@ -49,9 +48,6 @@ export function runSlashCommand(command: string, actions: TuiActions): void {
     case '/exit':
     case '/quit':
       actions.shutdown()
-      return
-    case '/status':
-      actions.status()
       return
     case '/clear':
       actions.clear()

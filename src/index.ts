@@ -838,9 +838,6 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
       shutdown() {
         void shutdown()
       },
-      status() {
-        store.setNotice(`session ${String(agent.session.id)} · ${agent.status} · ${agent.session.events.length} logged events`)
-      },
       help() {
         const commands = SLASH_COMMANDS.map(c => `  ${c.command.padEnd(SLASH_COMMAND_WIDTH)}  ${c.description}`).join('\n')
         const shortcuts = [

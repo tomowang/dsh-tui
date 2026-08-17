@@ -54,8 +54,6 @@ export interface TuiActions {
   cancel(): void
   /** Flush and exit. */
   shutdown(): void
-  /** Publish a transient `/status` snapshot as the live-region notice. */
-  status(): void
   /** Publish the `/help` command list and key shortcuts as the live-region notice. */
   help(): void
   /** Persist one newly submitted history line for cross-session up/down-arrow recall (best-effort; no-op without a settings service). */
