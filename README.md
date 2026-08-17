@@ -38,16 +38,12 @@ Requires Node `^22.19 || >=24` and a `DEEPSEEK_API_KEY`.
 npm install -g @deepseek-ai/dsh
 
 # 2. Create the profile and install this bundle into it
+#    (dsh reconciles the profile manifest's "dsh.profile.bundles" list
+#    automatically, appending any installed dependency that declares
+#    dsh.bundle.patch — no manual package.json edit needed)
 dsh plugin --profile tui add @tomowang/dsh-tui
 
-# 3. Declare the bundle stack in the profile manifest
-#    ($DSH_HOME/profiles/tui/package.json)
-#    "dsh": { "profile": { "bundles": [
-#      "@deepseek-ai/dsh-base",
-#      "@tomowang/dsh-tui"
-#    ] } }
-
-# 4. Run
+# 3. Run
 dsh --profile tui
 dsh --profile tui --resume <sessionId>           # reopen a persisted session
 dsh --profile tui --agent-preset <presetId>      # start a fresh session on a given preset
