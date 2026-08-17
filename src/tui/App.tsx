@@ -31,6 +31,7 @@ import { buildStatsLine, buildContextLine } from './statsFormat.js'
 import { commandQuery } from './commands.js'
 import { mentionQuery, matchFileCandidates } from './fileMention.js'
 import { formatEvent, formatStreamingText, formatShellRun, formatShellRunLive, type RenderOptions } from '../render.js'
+import { theme } from './theme.js'
 
 export type { TuiActions } from './PromptInput.js'
 
@@ -248,7 +249,7 @@ export function App({
           <QuestionOverlay question={state.overlay.userQuestion} actions={actions} />
         ) : (
           <>
-            {state.notice === undefined ? null : <Text>{state.notice}</Text>}
+            {state.notice === undefined ? null : <Text color={theme.secondary}>{state.notice}</Text>}
             <QueuedIndicator queued={state.queued} />
             <StreamingLine streaming={state.streaming} />
             <LiveShellRunLine run={state.shellRun} />

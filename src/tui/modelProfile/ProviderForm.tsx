@@ -13,6 +13,7 @@ import TextInput from 'ink-text-input'
 import type { TuiActions } from '../PromptInput.js'
 import type { DiscoveredModel, ModelEntry, ProviderDraft } from './types.js'
 import { ModelListEditor } from './ModelListEditor.js'
+import { theme } from '../theme.js'
 
 export interface ProviderFormProps {
   readonly draft: ProviderDraft
@@ -103,8 +104,8 @@ export function ProviderForm({ draft, discovered, busy, error, actions }: Provid
 
   return (
     <Box flexDirection="column">
-      <Text bold>{draft.isNew ? 'Add provider' : `Edit ${draft.displayName || draft.route}`}</Text>
-      {error === undefined ? null : <Text color="red">{error}</Text>}
+      <Text bold color={theme.secondary}>{draft.isNew ? 'Add provider' : `Edit ${draft.displayName || draft.route}`}</Text>
+      {error === undefined ? null : <Text color={theme.error}>{error}</Text>}
       {draft.isNew ? textRow('route', 'Route', route, setRoute) : null}
       {textRow('displayName', 'Name', displayName, setDisplayName)}
       {textRow('api', 'Protocol', api, setApi)}
@@ -124,7 +125,7 @@ export function ProviderForm({ draft, discovered, busy, error, actions }: Provid
         {focused === saveRow ? '› ' : '  '}
         {busy ? 'Saving…' : 'Save'}
       </Text>
-      <Text dimColor>tab/shift+tab move · enter confirm field / activate row · esc cancel</Text>
+      <Text color={theme.muted}>tab/shift+tab move · enter confirm field / activate row · esc cancel</Text>
     </Box>
   )
 }

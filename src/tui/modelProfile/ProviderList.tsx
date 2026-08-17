@@ -10,6 +10,7 @@ import { useState } from 'react'
 import { Box, Text, useInput } from 'ink'
 import type { TuiActions } from '../PromptInput.js'
 import type { ModelProfileOverlayState } from '../store.js'
+import { theme } from '../theme.js'
 
 export interface ProviderListProps {
   readonly modelProfile: ModelProfileOverlayState
@@ -67,9 +68,9 @@ export function ProviderList({ modelProfile, actions }: ProviderListProps) {
 
   return (
     <Box flexDirection="column">
-      <Text bold>Model providers</Text>
-      {error === undefined ? null : <Text color="red">{error}</Text>}
-      {busy && providers === undefined ? <Text dimColor>Loading…</Text> : null}
+      <Text bold color={theme.secondary}>Model providers</Text>
+      {error === undefined ? null : <Text color={theme.error}>{error}</Text>}
+      {busy && providers === undefined ? <Text color={theme.muted}>Loading…</Text> : null}
       {providers?.map((row, index) => (
         <Text key={row.route} inverse={index === selected}>
           {index === selected ? '› ' : '  '}
@@ -80,8 +81,8 @@ export function ProviderList({ modelProfile, actions }: ProviderListProps) {
           {confirmDelete === index ? ' — press d again to delete' : ''}
         </Text>
       ))}
-      {providers?.length === 0 ? <Text dimColor>No providers configured yet — press a to add one.</Text> : null}
-      <Text dimColor>↑↓ select · enter edit · a add · d delete · s set active model · esc close</Text>
+      {providers?.length === 0 ? <Text color={theme.muted}>No providers configured yet — press a to add one.</Text> : null}
+      <Text color={theme.muted}>↑↓ select · enter edit · a add · d delete · s set active model · esc close</Text>
     </Box>
   )
 }

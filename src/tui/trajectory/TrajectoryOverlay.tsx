@@ -21,6 +21,7 @@ import { buildTrajectoryRows } from './layout.js'
 import { TrajectoryLedger } from './TrajectoryLedger.js'
 import { TrajectoryDetail } from './TrajectoryDetail.js'
 import { TRAJECTORY_DETAIL_TABS, type TrajectoryDetailTab, type TrajectoryRow } from './types.js'
+import { theme } from '../theme.js'
 
 export interface TrajectoryOverlayProps {
   readonly events: readonly SessionEvent[]
@@ -136,7 +137,7 @@ export function TrajectoryOverlay({ events, availableRows, actions }: Trajectory
 
   return (
     <Box flexDirection="column">
-      <Text bold>
+      <Text bold color={theme.secondary}>
         Trajectory{filter === '' ? '' : ` — filter: ${filter}`}
         {records.length === 0 ? '' : ` (${effectiveIndex + 1}/${records.length})`}
       </Text>
@@ -148,7 +149,7 @@ export function TrajectoryOverlay({ events, availableRows, actions }: Trajectory
           <TextInput value={filter} onChange={setFilter} focus={filterFocused} onSubmit={() => setFilterFocused(false)} />
         </Box>
       ) : (
-        <Text dimColor>↑↓ select · tab detail · c collapse · / filter · esc close</Text>
+        <Text color={theme.muted}>↑↓ select · tab detail · c collapse · / filter · esc close</Text>
       )}
     </Box>
   )

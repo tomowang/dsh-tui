@@ -11,6 +11,7 @@ import { Box, Text, useInput } from 'ink'
 import type { ContextBreakdownProjection, ContextPressureProjection } from '@deepseek-ai/dsh-token-meter'
 import type { TuiActions } from '../PromptInput.js'
 import { contextBreakdownRows, contextOccupancy, formatTokens } from '../statsFormat.js'
+import { theme } from '../theme.js'
 
 export interface ContextOverlayProps {
   readonly pressure: ContextPressureProjection | undefined
@@ -35,25 +36,25 @@ export function ContextOverlay({ pressure, breakdown, actions }: ContextOverlayP
 
   return (
     <Box flexDirection="column">
-      <Text bold>Context usage</Text>
+      <Text bold color={theme.secondary}>Context usage</Text>
       {occupancy === null ? (
-        <Text dimColor>No usage reported yet — send a message first.</Text>
+        <Text color={theme.muted}>No usage reported yet — send a message first.</Text>
       ) : (
         <>
           <Text>
             {occupancy.percent}% of context used
           </Text>
-          <Text dimColor>
+          <Text color={theme.muted}>
             ~{formatTokens(occupancy.usedTokens)} / {formatTokens(occupancy.contextWindow)}
           </Text>
           <Box height={1} />
           {rows.length === 0 ? (
-            <Text dimColor>No composition breakdown yet.</Text>
+            <Text color={theme.muted}>No composition breakdown yet.</Text>
           ) : (
             rows.map(row => (
               <Box key={row.label}>
                 <Text>{row.label.padEnd(14)} </Text>
-                <Text dimColor>{bar(row.width)} </Text>
+                <Text color={theme.secondary}>{bar(row.width)} </Text>
                 <Text>{formatTokens(row.tokens)}</Text>
               </Box>
             ))
@@ -61,7 +62,7 @@ export function ContextOverlay({ pressure, breakdown, actions }: ContextOverlayP
         </>
       )}
       <Box height={1} />
-      <Text dimColor>esc close</Text>
+      <Text color={theme.muted}>esc close</Text>
     </Box>
   )
 }

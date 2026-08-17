@@ -6,6 +6,7 @@
 
 import { Text } from 'ink'
 import type { PermissionState } from './store.js'
+import { theme } from './theme.js'
 
 export interface PermissionIndicatorProps {
   readonly permission: PermissionState | undefined
@@ -26,10 +27,10 @@ const ICONS: Record<string, string> = {
 }
 
 const COLORS: Record<string, string> = {
-  'read-only': 'cyan',
-  'workspace-write': 'green',
-  'danger-full-access': 'red',
-  custom: 'gray',
+  'read-only': theme.info,
+  'workspace-write': theme.success,
+  'danger-full-access': theme.error,
+  custom: theme.muted,
 }
 
 function labelFor(preset: string): string {
@@ -41,13 +42,13 @@ function iconFor(preset: string): string {
 }
 
 function colorFor(preset: string): string {
-  return COLORS[preset] ?? 'gray'
+  return COLORS[preset] ?? theme.muted
 }
 
 export function PermissionIndicator({ permission }: PermissionIndicatorProps) {
   if (permission === undefined) return null
   return (
-    <Text dimColor>
+    <Text color={theme.muted}>
       <Text color={colorFor(permission.current)}>
         {iconFor(permission.current)} {labelFor(permission.current)}
       </Text>

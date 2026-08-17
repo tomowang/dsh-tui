@@ -13,6 +13,7 @@ import { useState } from 'react'
 import { Box, Text, useInput } from 'ink'
 import type { TuiActions } from '../PromptInput.js'
 import type { PluginRow } from './types.js'
+import { theme } from '../theme.js'
 
 export interface PluginsOverlayProps {
   readonly rows: readonly PluginRow[]
@@ -70,19 +71,21 @@ export function PluginsOverlay({ rows, availableRows, actions }: PluginsOverlayP
 
   return (
     <Box flexDirection="column">
-      <Text bold>
+      <Text bold color={theme.secondary}>
         Plugins ({rows.length}) — {activeCount} active{failedCount === 0 ? '' : `, ${failedCount} failed`}
       </Text>
       {windowedRows.map(row => (
         <Box key={row.id}>
-          <Text color={row.state === 'failed' ? 'red' : row.state === 'active' ? 'green' : undefined} dimColor={row.disabled}>
+          <Text
+            color={row.disabled ? theme.muted : row.state === 'failed' ? theme.error : row.state === 'active' ? theme.success : undefined}
+          >
             {rowLabel(row).padEnd(8)}
           </Text>
-          <Text dimColor={row.disabled}> {row.id}</Text>
-          <Text dimColor> ({row.name})</Text>
+          <Text color={row.disabled ? theme.muted : undefined}> {row.id}</Text>
+          <Text color={theme.muted}> ({row.name})</Text>
         </Box>
       ))}
-      <Text dimColor>↑↓ scroll · esc close</Text>
+      <Text color={theme.muted}>↑↓ scroll · esc close</Text>
     </Box>
   )
 }

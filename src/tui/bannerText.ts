@@ -8,6 +8,7 @@
 
 import { truncate } from '../render.js'
 import { LOGO_HALF_BLOCK } from './logoArt.generated.js'
+import { theme } from './theme.js'
 
 export interface BannerContent {
   readonly version: string
@@ -17,8 +18,19 @@ export interface BannerContent {
 }
 
 const ESC = '\x1b['
-const dim = (s: string): string => `${ESC}2m${s}${ESC}0m`
 const bold = (s: string): string => `${ESC}1m${s}${ESC}0m`
+
+/** A 24-bit-color wrapper for one theme hex token — mirrors `render.ts`'s `fg()` so this file stays dependency-free. */
+function fg(hex: string): (s: string) => string {
+  const n = Number.parseInt(hex.slice(1), 16)
+  const r = (n >> 16) & 0xff
+  const g = (n >> 8) & 0xff
+  const b = n & 0xff
+  return (s: string) => `${ESC}38;2;${r};${g};${b}m${s}${ESC}0m`
+}
+
+const dim = fg(theme.muted)
+const primary = fg(theme.primary)
 
 // eslint-disable-next-line no-control-regex -- \x1b deliberately matches the ANSI escape byte, not a typo.
 const ANSI_RE = /\x1b\[[0-9;?]*[a-zA-Z]/g
@@ -48,7 +60,7 @@ function topBorder(title: string, total: number): string {
   const label = ` ${title} `
   const leftDashes = 3
   const rightDashes = Math.max(1, inner - leftDashes - label.length)
-  return `╭${'─'.repeat(leftDashes)}${label}${'─'.repeat(rightDashes)}╮`
+  return `╭${'─'.repeat(leftDashes)}${primary(label)}${'─'.repeat(rightDashes)}╮`
 }
 
 function buildLeftColumn(): string[] {
@@ -58,7 +70,7 @@ function buildLeftColumn(): string[] {
 
 function buildRightColumn(content: BannerContent, width: number): string[] {
   return [
-    bold('DeepSeek Harness'),
+    bold(primary('DeepSeek Harness')),
     '',
     dim(`${content.provider}/${content.model}`),
     dim(truncate(content.cwd, width)),

@@ -12,6 +12,7 @@
 import { Box, Text, useInput } from 'ink'
 import type { TuiActions } from '../PromptInput.js'
 import type { AgentPresetsOverlayState } from '../store.js'
+import { theme } from '../theme.js'
 
 export interface AgentPresetsOverlayProps {
   readonly agentPresets: AgentPresetsOverlayState
@@ -43,9 +44,9 @@ export function AgentPresetsOverlay({ agentPresets, actions }: AgentPresetsOverl
 
   return (
     <Box flexDirection="column">
-      <Text bold>Agent presets</Text>
-      {error === undefined ? null : <Text color="red">{error}</Text>}
-      {busy && rows.length === 0 ? <Text dimColor>Loading…</Text> : null}
+      <Text bold color={theme.secondary}>Agent presets</Text>
+      {error === undefined ? null : <Text color={theme.error}>{error}</Text>}
+      {busy && rows.length === 0 ? <Text color={theme.muted}>Loading…</Text> : null}
       {rows.map((row, index) => (
         <Box key={row.id} flexDirection="column">
           <Text inverse={index === selected}>
@@ -55,14 +56,14 @@ export function AgentPresetsOverlay({ agentPresets, actions }: AgentPresetsOverl
             {row.trust === 'user' ? ' (custom)' : ''}
           </Text>
           {row.broken !== undefined ? (
-            <Text color="red">    broken: {row.broken}</Text>
+            <Text color={theme.error}>    broken: {row.broken}</Text>
           ) : row.description !== undefined ? (
-            <Text dimColor>    {row.description}</Text>
+            <Text color={theme.muted}>    {row.description}</Text>
           ) : null}
         </Box>
       ))}
-      {rows.length === 0 && !busy ? <Text dimColor>No agent presets configured in this profile.</Text> : null}
-      <Text dimColor>{blank ? '↑↓ select · enter apply · esc close' : 'session already started — preset is fixed · esc close'}</Text>
+      {rows.length === 0 && !busy ? <Text color={theme.muted}>No agent presets configured in this profile.</Text> : null}
+      <Text color={theme.muted}>{blank ? '↑↓ select · enter apply · esc close' : 'session already started — preset is fixed · esc close'}</Text>
     </Box>
   )
 }

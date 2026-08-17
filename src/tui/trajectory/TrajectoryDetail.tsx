@@ -8,6 +8,7 @@
 import { Box, Text } from 'ink'
 import { buildDetail } from './detail.js'
 import { TRAJECTORY_DETAIL_TABS, type TrajectoryDetailTab, type TrajectoryRecord } from './types.js'
+import { theme } from '../theme.js'
 
 export interface TrajectoryDetailProps {
   readonly record: TrajectoryRecord | undefined
@@ -26,11 +27,11 @@ export function TrajectoryDetail({ record, tab, maxLines }: TrajectoryDetailProp
         {TRAJECTORY_DETAIL_TABS.map(candidate => (candidate === tab ? `[${candidate}]` : ` ${candidate} `)).join(' ')}
       </Text>
       {record === undefined ? (
-        <Text dimColor>(no record selected)</Text>
+        <Text color={theme.muted}>(no record selected)</Text>
       ) : (
         shown.map((line, index) => <Text key={index}>{line}</Text>)
       )}
-      {hidden > 0 ? <Text dimColor>… {hidden} more line{hidden === 1 ? '' : 's'}</Text> : null}
+      {hidden > 0 ? <Text color={theme.muted}>… {hidden} more line{hidden === 1 ? '' : 's'}</Text> : null}
     </Box>
   )
 }

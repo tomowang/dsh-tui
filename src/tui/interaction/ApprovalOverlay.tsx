@@ -9,6 +9,7 @@
 import { useState } from 'react'
 import { Box, Text, useInput } from 'ink'
 import type { TuiActions } from '../PromptInput.js'
+import { theme } from '../theme.js'
 import type { ApprovalPromptState } from './types.js'
 
 export interface ApprovalOverlayProps {
@@ -48,19 +49,19 @@ export function ApprovalOverlay({ approval, actions }: ApprovalOverlayProps) {
 
   return (
     <Box flexDirection="column">
-      <Text bold color="yellow">Approval requested</Text>
+      <Text bold color={theme.warning}>Approval requested</Text>
       <Text>
         Tool: <Text bold>{approval.toolName}</Text>
-        {approval.callId === undefined ? null : <Text dimColor> ({approval.callId})</Text>}
+        {approval.callId === undefined ? null : <Text color={theme.muted}> ({approval.callId})</Text>}
       </Text>
-      {approval.reason === undefined ? null : <Text dimColor>{approval.reason}</Text>}
+      {approval.reason === undefined ? null : <Text color={theme.muted}>{approval.reason}</Text>}
       {CHOICES.map((choice, index) => (
-        <Text key={choice.outcome} inverse={index === selected} color={choice.outcome === 'rejected' ? 'red' : 'green'}>
+        <Text key={choice.outcome} inverse={index === selected} color={choice.outcome === 'rejected' ? theme.error : theme.success}>
           {index === selected ? '› ' : '  '}
           {choice.label}
         </Text>
       ))}
-      <Text dimColor>↑↓ select · enter confirm · y allow · n/esc reject</Text>
+      <Text color={theme.muted}>↑↓ select · enter confirm · y allow · n/esc reject</Text>
     </Box>
   )
 }

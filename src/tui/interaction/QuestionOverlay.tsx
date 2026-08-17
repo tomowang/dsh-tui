@@ -14,6 +14,7 @@ import { useState } from 'react'
 import { Box, Text, useInput } from 'ink'
 import TextInput from 'ink-text-input'
 import type { TuiActions } from '../PromptInput.js'
+import { theme } from '../theme.js'
 import type { QuestionPromptState } from './types.js'
 
 export interface QuestionOverlayProps {
@@ -94,7 +95,7 @@ export function QuestionOverlay({ question, actions }: QuestionOverlayProps) {
 
   return (
     <Box flexDirection="column">
-      <Text bold color="cyan">
+      <Text bold color={theme.secondary}>
         {header ?? 'Question'}
         {progress === undefined ? '' : ` — ${progress}`}
       </Text>
@@ -102,7 +103,7 @@ export function QuestionOverlay({ question, actions }: QuestionOverlayProps) {
       {detail === undefined ? null : (
         <Box flexDirection="column" marginTop={1} marginBottom={1}>
           {capDetailLines(detail).map((line, index) => (
-            <Text key={index} dimColor>{line}</Text>
+            <Text key={index} color={theme.muted}>{line}</Text>
           ))}
         </Box>
       )}
@@ -114,7 +115,7 @@ export function QuestionOverlay({ question, actions }: QuestionOverlayProps) {
             {option.label}
             {approveLabel === option.label ? ' (approve)' : ''}
           </Text>
-          {option.description === undefined ? null : <Text dimColor>    {option.description}</Text>}
+          {option.description === undefined ? null : <Text color={theme.muted}>    {option.description}</Text>}
         </Box>
       ))}
       {options.length === 0 ? null : (
@@ -128,7 +129,7 @@ export function QuestionOverlay({ question, actions }: QuestionOverlayProps) {
           <TextInput value={customText} onChange={setCustomText} onSubmit={submit} />
         </Box>
       ) : null}
-      <Text dimColor>
+      <Text color={theme.muted}>
         {multiSelect ? '↑↓ move · space toggle · enter submit' : '↑↓ move · enter select'}
         {options.length === 0 ? '' : ' · "Other…" for free text'}
         {' · esc skip'}

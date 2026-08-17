@@ -7,6 +7,7 @@
 import { Box, Text } from 'ink'
 import type { UserMessage } from '@deepseek-ai/dsh-session'
 import { truncate } from '../render.js'
+import { theme } from './theme.js'
 
 export interface QueuedIndicatorProps {
   readonly queued: readonly UserMessage[]
@@ -25,7 +26,7 @@ export function QueuedIndicator({ queued }: QueuedIndicatorProps) {
   return (
     <Box flexDirection="column">
       {queued.map(message => (
-        <Text key={message.id} dimColor>
+        <Text key={message.id} color={theme.muted}>
           ↳ queued: {previewOf(message)}
         </Text>
       ))}

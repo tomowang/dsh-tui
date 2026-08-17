@@ -8,6 +8,7 @@
 
 import { Box, Text } from 'ink'
 import type { TrajectoryRecord, TrajectoryRow } from './types.js'
+import { theme } from '../theme.js'
 
 export interface TrajectoryLedgerProps {
   readonly rows: readonly TrajectoryRow[]
@@ -21,8 +22,9 @@ function recordGlyph(record: TrajectoryRecord): string {
 }
 
 function RecordRow({ record, selected }: { record: TrajectoryRecord; selected: boolean }) {
+  const color = record.isError ? theme.error : record.kind === 'header' ? theme.muted : undefined
   return (
-    <Text inverse={selected} color={record.isError ? 'red' : undefined} dimColor={record.kind === 'header'}>
+    <Text inverse={selected} color={color}>
       {selected ? '› ' : '  '}
       {recordGlyph(record)} {record.label}
     </Text>
@@ -36,19 +38,19 @@ export function TrajectoryLedger({ rows, selectedId }: TrajectoryLedgerProps) {
         switch (row.kind) {
           case 'turn':
             return (
-              <Text key={`turn-${row.turn}`} bold>
+              <Text key={`turn-${row.turn}`} bold color={theme.secondary}>
                 ── Turn {row.turn} ──{row.aborted === undefined ? '' : ` ⚠ ${row.aborted}`}
               </Text>
             )
           case 'step':
             return (
-              <Text key={`step-${row.turn}-${row.step}`} dimColor>
+              <Text key={`step-${row.turn}-${row.step}`} color={theme.muted}>
                 {'  '}Step {row.step}
               </Text>
             )
           case 'collapsed':
             return (
-              <Text key={`collapsed-${row.turn}-${index}`} dimColor>
+              <Text key={`collapsed-${row.turn}-${index}`} color={theme.muted}>
                 {'  '}… {row.count} record{row.count === 1 ? '' : 's'} collapsed
               </Text>
             )

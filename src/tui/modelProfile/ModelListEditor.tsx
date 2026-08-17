@@ -11,6 +11,7 @@ import { useState } from 'react'
 import { Box, Text, useInput } from 'ink'
 import TextInput from 'ink-text-input'
 import type { DiscoveredModel, ModelEntry } from './types.js'
+import { theme } from '../theme.js'
 
 export interface ModelListEditorProps {
   readonly models: readonly ModelEntry[]
@@ -65,7 +66,7 @@ export function ModelListEditor({ models, discovered, busy, onChange, onDiscover
 
   return (
     <Box flexDirection="column">
-      <Text bold>Models</Text>
+      <Text bold color={theme.secondary}>Models</Text>
       {models.map((model, index) => (
         <Text key={model.id} inverse={!inputFocused && index === selected}>
           {!inputFocused && index === selected ? '› ' : '  '}
@@ -73,19 +74,19 @@ export function ModelListEditor({ models, discovered, busy, onChange, onDiscover
           {model.name === undefined ? '' : ` — ${model.name}`}
         </Text>
       ))}
-      {models.length === 0 ? <Text dimColor>No models yet.</Text> : null}
+      {models.length === 0 ? <Text color={theme.muted}>No models yet.</Text> : null}
       <Box>
         <Text>{inputFocused ? '› ' : '  '}Add id: </Text>
         <TextInput value={draftId} onChange={setDraftId} onSubmit={addModel} focus={inputFocused} />
       </Box>
-      {busy ? <Text dimColor>Discovering…</Text> : null}
+      {busy ? <Text color={theme.muted}>Discovering…</Text> : null}
       {discovered === undefined ? null : discovered.length === 0 ? (
-        <Text dimColor>No models discovered.</Text>
+        <Text color={theme.muted}>No models discovered.</Text>
       ) : (
         <Box flexDirection="column">
-          <Text dimColor>Discovered — tab to the id field and type one to adopt it:</Text>
+          <Text color={theme.muted}>Discovered — tab to the id field and type one to adopt it:</Text>
           {discovered.map(model => (
-            <Text key={model.id} dimColor>
+            <Text key={model.id} color={theme.muted}>
               {'  '}
               {model.id}
               {model.name === undefined ? '' : ` — ${model.name}`}
@@ -93,7 +94,7 @@ export function ModelListEditor({ models, discovered, busy, onChange, onDiscover
           ))}
         </Box>
       )}
-      <Text dimColor>tab toggle list/input · ↑↓ select · x remove · g discover · esc back</Text>
+      <Text color={theme.muted}>tab toggle list/input · ↑↓ select · x remove · g discover · esc back</Text>
     </Box>
   )
 }

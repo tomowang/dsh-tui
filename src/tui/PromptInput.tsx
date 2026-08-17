@@ -37,6 +37,7 @@
 
 import { useEffect, useRef, useState, type Dispatch } from 'react'
 import { Box, Text, useInput } from 'ink'
+import { theme } from './theme.js'
 import type { AgentStatus } from '@deepseek-ai/dsh-agent'
 import { commandQuery, matchSlashCommands, runSlashCommand, SLASH_COMMAND_WIDTH } from './commands.js'
 import { mentionQuery, matchFileCandidates } from './fileMention.js'
@@ -627,7 +628,7 @@ export function PromptInput({ status, actions, state, dispatch, history, fileInd
       )}
       {mentionOpen && fileIndex.candidates === undefined && (
         <Box paddingX={1}>
-          <Text dimColor>loading files…</Text>
+          <Text color={theme.muted}>loading files…</Text>
         </Box>
       )}
       {mentionOpen && fileIndex.candidates !== undefined && mentionMatches.length > 0 && (
@@ -639,12 +640,12 @@ export function PromptInput({ status, actions, state, dispatch, history, fileInd
           ))}
         </Box>
       )}
-      {armedKey !== null && <Text dimColor>Press Ctrl+{armedKey.toUpperCase()} again to exit</Text>}
-      {state.shellMode && <Text color="yellow">! shell mode — Enter runs the command, Esc/Backspace exits</Text>}
-      <Box borderStyle="round" borderColor={state.shellMode ? 'yellow' : 'white'} paddingX={1} flexDirection="column">
+      {armedKey !== null && <Text color={theme.muted}>Press Ctrl+{armedKey.toUpperCase()} again to exit</Text>}
+      {state.shellMode && <Text color={theme.warning}>! shell mode — Enter runs the command, Esc/Backspace exits</Text>}
+      <Box borderStyle="round" borderColor={state.shellMode ? theme.warning : theme.primary} paddingX={1} flexDirection="column">
         {lines.map((line, i) => (
           <Box key={i}>
-            <Text color={state.shellMode ? 'yellow' : undefined}>{i === 0 ? (state.shellMode ? '! ' : '› ') : '  '}</Text>
+            <Text color={state.shellMode ? theme.warning : theme.primary}>{i === 0 ? (state.shellMode ? '! ' : '› ') : '  '}</Text>
             {renderLineContent(line, i === cursorRow ? cursorCol : null)}
           </Box>
         ))}

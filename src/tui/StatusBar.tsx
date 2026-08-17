@@ -7,6 +7,7 @@ import { Text } from 'ink'
 import type { AgentStatus } from '@deepseek-ai/dsh-agent'
 import { stripSessionIdPrefix } from '../sessionId.js'
 import { Spinner } from './Spinner.js'
+import { theme } from './theme.js'
 
 export interface StatusBarProps {
   readonly sessionId: string
@@ -22,8 +23,8 @@ export function StatusBar({ sessionId, provider, model, status, queuedCount, pre
   const queuedSuffix = queuedCount > 0 ? ` · ${queuedCount} queued` : ''
   const presetSegment = presetLabel === undefined ? '' : ` · ${presetLabel}`
   return (
-    <Text dimColor>
-      session {stripSessionIdPrefix(sessionId)} · {provider}/{model}
+    <Text color={theme.muted}>
+      session {stripSessionIdPrefix(sessionId)} · <Text color={theme.accent}>{provider}/{model}</Text>
       {presetSegment} · {status === 'running' ? <Spinner /> : null}{' '}
       {status}
       {queuedSuffix}

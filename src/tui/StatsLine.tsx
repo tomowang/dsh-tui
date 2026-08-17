@@ -7,6 +7,7 @@
  */
 
 import { Text } from 'ink'
+import { theme } from './theme.js'
 
 export interface StatsLineProps {
   /** Pre-joined display line; empty when there is nothing to show yet. */
@@ -15,5 +16,5 @@ export interface StatsLineProps {
 
 export function StatsLine({ line }: StatsLineProps) {
   if (line === '') return null
-  return <Text dimColor>{line}</Text>
+  return <Text color={theme.muted}>{line}</Text>
 }
