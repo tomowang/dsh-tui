@@ -5,8 +5,13 @@
  * @module @tomowang/dsh-tui/tui/trajectory/types
  */
 
-/** What kind of session record a ledger row represents. */
-export type TrajectoryRecordKind = 'user' | 'assistant' | 'tool' | 'header'
+/**
+ * What kind of session record a ledger row represents. `context` mirrors the
+ * web ledger's split of `user/message` by `source.kind`: a direct human
+ * prompt is `user`, while plugin-injected context (subdir AGENTS.md, skill
+ * content, cron notices, …) is `context` — see `userLabel` in `layout.ts`.
+ */
+export type TrajectoryRecordKind = 'user' | 'context' | 'assistant' | 'tool' | 'header'
 
 /** Which tab of the detail pane is showing for the selected record. */
 export type TrajectoryDetailTab = 'summary' | 'payload' | 'result' | 'timing'

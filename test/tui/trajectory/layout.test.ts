@@ -90,7 +90,7 @@ describe('buildTrajectoryRows', () => {
     expect(turn1).toMatchObject({ kind: 'turn', turn: 1, aborted: undefined })
   })
 
-  it('collapses a plugin-injected user/message to a label with no payload', () => {
+  it('classifies a plugin-injected user/message as a context record with a label and no payload', () => {
     const rows = buildTrajectoryRows(
       [
         event('turn/start', 1, { turn: 1 }),
@@ -102,8 +102,64 @@ describe('buildTrajectoryRows', () => {
       new Set(),
     )
     const record = recordRows(rows)[0]?.record
-    expect(record?.label).toBe('context › skill-loader · loaded foo skill')
+    expect(record?.kind).toBe('context')
+    expect(record?.label).toBe('skill-loader · loaded foo skill')
     expect(record?.payload).toBeUndefined()
+  })
+
+  it('falls back to a reasoning preview for an assistant message with only thinking and tool calls', () => {
+    const rows = buildTrajectoryRows(
+      [
+        event('turn/start', 1, { turn: 1 }),
+        event('assistant/message', 2, {
+          turn: 1,
+          step: 1,
+          message: { content: [{ type: 'reasoning', text: 'let me check the file first' }] },
+        }),
+      ],
+      new Set(),
+    )
+    const assistant = recordRows(rows).find(row => row.record.kind === 'assistant')
+    expect(assistant?.record.label).toBe('let me check the file first')
+    expect(assistant?.record.payload).toBe('let me check the file first')
+  })
+
+  it('still labels an assistant message "(tool calls only)" with neither text nor reasoning', () => {
+    const rows = buildTrajectoryRows(
+      [
+        event('turn/start', 1, { turn: 1 }),
+        event('assistant/message', 2, {
+          turn: 1,
+          step: 1,
+          message: { content: [{ type: 'tool-call', toolCallId: 'c1', name: 'bash', arguments: '{}' }] },
+        }),
+      ],
+      new Set(),
+    )
+    const assistant = recordRows(rows).find(row => row.record.kind === 'assistant')
+    expect(assistant?.record.label).toBe('(tool calls only)')
+    expect(assistant?.record.payload).toBeUndefined()
+  })
+
+  it('prefers visible text over reasoning when both are present', () => {
+    const rows = buildTrajectoryRows(
+      [
+        event('turn/start', 1, { turn: 1 }),
+        event('assistant/message', 2, {
+          turn: 1,
+          step: 1,
+          message: {
+            content: [
+              { type: 'reasoning', text: 'thinking it through' },
+              { type: 'text', text: 'the answer' },
+            ],
+          },
+        }),
+      ],
+      new Set(),
+    )
+    const assistant = recordRows(rows).find(row => row.record.kind === 'assistant')
+    expect(assistant?.record.label).toBe('the answer')
   })
 
   it('folds a collapsed turn to its first record plus a summary row', () => {

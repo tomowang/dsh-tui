@@ -8,7 +8,7 @@
  */
 
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import { textOf, truncate } from '../../render.js'
+import { reasoningOf, textOf, truncate } from '../../render.js'
 import type { TrajectoryRecordKind, TrajectoryRow } from './types.js'
 
 const LABEL_LIMIT = 100
@@ -43,14 +43,15 @@ function prettyJson(raw: string): string {
   }
 }
 
+/** The row's kind tag (USER/CONTEXT) already names the source, so the label itself carries no redundant prefix. */
 function userLabel(data: SessionEvent<'user/message'>['data']): string {
   const { source } = data
-  if (source.kind === 'user') return `you › ${truncate(textOf(data.content), LABEL_LIMIT)}`
+  if (source.kind === 'user') return truncate(textOf(data.content), LABEL_LIMIT)
   if (source.kind === 'plugin') {
     const summary = source.form === 'notice' ? source.summary : undefined
-    return `context › ${source.plugin}${summary === undefined ? '' : ` · ${summary}`}`
+    return `${source.plugin}${summary === undefined ? '' : ` · ${summary}`}`
   }
-  return `context › ${source.kind}`
+  return source.kind
 }
 
 /**
@@ -107,7 +108,7 @@ export function buildTrajectoryRows(
         const text = event.data.source.kind === 'user' ? textOf(event.data.content) : ''
         const record: RecordDraft = {
           id: `${event.seq}`,
-          kind: 'user',
+          kind: event.data.source.kind === 'user' ? 'user' : 'context',
           turn: currentTurn,
           step: currentStep,
           seq: event.seq,
@@ -123,8 +124,13 @@ export function buildTrajectoryRows(
         break
       }
       case 'assistant/message': {
-        const text = textOf(event.data.message.content)
-        const label = text === '' ? '(tool calls only)' : truncate(text, LABEL_LIMIT)
+        const content = event.data.message.content
+        // Mirrors the web ledger: fall back to a preview of the reasoning/thinking
+        // block when there's no visible text, only labeling it "(tool calls only)"
+        // when there's neither — see `recordDisplayText` in the web ledger.
+        const text = textOf(content)
+        const displaySource = text === '' ? reasoningOf(content) : text
+        const label = displaySource === '' ? '(tool calls only)' : truncate(displaySource, LABEL_LIMIT)
         const record: RecordDraft = {
           id: `${event.seq}`,
           kind: 'assistant',
@@ -136,7 +142,7 @@ export function buildTrajectoryRows(
           label,
           isError: false,
           summary: label,
-          payload: text === '' ? undefined : text,
+          payload: displaySource === '' ? undefined : displaySource,
           result: undefined,
         }
         rows.push({ kind: 'record', record })
