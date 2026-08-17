@@ -2,6 +2,33 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.4.0] - 2026-08-17
+
+### Bug Fixes
+
+- Unstick /trajectory collapse and stop leaking injected-context payloads
+- *(changelog)* Add blank line between release sections in git-cliff template
+
+### Documentation
+
+- Drop stale manual bundle-declaration step from README install
+- Add build/npm/license/tech-stack badges and a push/PR CI workflow
+- Document the Tool Cards overlay, reasoning display, and Markdown rendering
+- Codify checking README/AGENTS.md before committing feature work
+- *(assets)* Trim duplicate trailing frames and refresh gif/screenshot
+
+### Features
+
+- Adopt a DeepSeek-branded truecolor palette across the TUI
+- Detect and render Markdown in assistant text
+- Render reasoning content
+- Add a Tool Cards overlay for expanding/collapsing tool output
+- Align /trajectory ledger rows with the web portal's kind tags
+
+### Refactor
+
+- Drop /status, fold event count into the status bar
+
 ## [0.3.0] - 2026-08-16
 
 ### Bug Fixes
@@ -95,3 +122,4 @@ All notable changes to this project are documented in this file.
 ### Testing
 
 - Add Vitest unit tests for render/store/statsFormat/commands
+
