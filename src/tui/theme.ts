@@ -19,7 +19,7 @@ export const theme = {
   secondary: '#38BDF8',
   /** Slate Indigo — badges (active provider/model). */
   accent: '#818CF8',
-  /** Thought Violet — reserved for `<think>`/reasoning content once rendered; see AGENTS.md's "reasoning content is dropped" gap. */
+  /** Thought Violet — reasoning/thinking content, set apart from assistant text; see `formatReasoning` in `src/render.ts`. */
   reasoning: '#A855F7',
   /** Mint Emerald. */
   success: '#34D399',

@@ -17,7 +17,7 @@ export interface StreamingLineProps {
 
 export function StreamingLine({ streaming }: StreamingLineProps) {
   if (streaming === undefined) return null
-  const line = formatStreamingText(streaming.text)
+  const line = formatStreamingText(streaming.text, streaming.reasoningText)
   if (line === undefined) return null
   return <Text>{line}</Text>
 }

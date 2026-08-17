@@ -190,7 +190,7 @@ export function App({
     }
     const noticeLines = state.notice === undefined ? 0 : state.notice.split('\n').length
     const queuedLines = state.queued.length
-    const streamingLines = state.streaming === undefined ? 0 : (formatStreamingText(state.streaming.text)?.split('\n').length ?? 0)
+    const streamingLines = state.streaming === undefined ? 0 : (formatStreamingText(state.streaming.text, state.streaming.reasoningText)?.split('\n').length ?? 0)
     const shellRunLines = state.shellRun === undefined ? 0 : formatShellRunLive(state.shellRun.command, state.shellRun.output).split('\n').length
     const statusBarLines = 1
     const statsLines = statsLine === '' ? 0 : 1

@@ -71,7 +71,7 @@ describe('TuiStore streaming', () => {
     store.appendEvent(chunkEvent(3, 1, 1, { type: 'text-delta', index: 0, text: 'lo' }))
 
     const snapshot = store.getSnapshot()
-    expect(snapshot.streaming).toEqual({ turn: 1, step: 1, text: 'Hello' })
+    expect(snapshot.streaming).toEqual({ turn: 1, step: 1, text: 'Hello', reasoningText: '' })
     expect(snapshot.events).toEqual([])
   })
 
@@ -83,7 +83,19 @@ describe('TuiStore streaming', () => {
     store.appendEvent(chunkEvent(3, 1, 2, { type: 'block-start', index: 0, blockType: 'text' }))
     store.appendEvent(chunkEvent(4, 1, 2, { type: 'text-delta', index: 0, text: 'second step' }))
 
-    expect(store.getSnapshot().streaming).toEqual({ turn: 1, step: 2, text: 'second step' })
+    expect(store.getSnapshot().streaming).toEqual({ turn: 1, step: 2, text: 'second step', reasoningText: '' })
+  })
+
+  it('folds reasoning-delta chunks into streaming.reasoningText alongside text', () => {
+    const store = new TuiStore({ events: [] })
+
+    store.appendEvent(chunkEvent(1, 1, 1, { type: 'block-start', index: 0, blockType: 'reasoning' }))
+    store.appendEvent(chunkEvent(2, 1, 1, { type: 'reasoning-delta', index: 0, text: 'weighing op' }))
+    store.appendEvent(chunkEvent(3, 1, 1, { type: 'reasoning-delta', index: 0, text: 'tions' }))
+    store.appendEvent(chunkEvent(4, 1, 1, { type: 'block-start', index: 1, blockType: 'text' }))
+    store.appendEvent(chunkEvent(5, 1, 1, { type: 'text-delta', index: 1, text: 'answer' }))
+
+    expect(store.getSnapshot().streaming).toEqual({ turn: 1, step: 1, text: 'answer', reasoningText: 'weighing options' })
   })
 
   it('assistant/message clears streaming and appends the settled event', () => {

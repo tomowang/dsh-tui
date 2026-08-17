@@ -17,7 +17,7 @@ import type { DiscoveredModel, ProviderDraft, ProviderRow } from './modelProfile
 import type { PluginRow } from './plugins/types.js'
 import type { AgentPresetRow } from './agentPresets/types.js'
 import type { ApprovalPromptState, QuestionPromptState } from './interaction/types.js'
-import { textOf } from '../render.js'
+import { reasoningOf, textOf } from '../render.js'
 
 /** Which pane of the `/model` overlay is showing. */
 export type ModelProfileView = 'list' | 'form'
@@ -96,6 +96,8 @@ export interface StreamingState {
   readonly turn: number
   readonly step: number
   readonly text: string
+  /** Accumulated reasoning/thinking text, distinct from `text`; empty when the step has none. */
+  readonly reasoningText: string
 }
 
 /** The in-flight local shell-escape run (`!` prompt-mode), mirroring `StreamingState`'s live-region role. */
@@ -236,8 +238,10 @@ export class TuiStore {
       this.streamingKey = { turn, step }
     }
     this.streamingAssembler!.push(chunk)
-    const text = textOf(this.streamingAssembler!.blocks())
-    this.set({ streaming: text === '' ? undefined : { turn, step, text } })
+    const blocks = this.streamingAssembler!.blocks()
+    const text = textOf(blocks)
+    const reasoningText = reasoningOf(blocks)
+    this.set({ streaming: text === '' && reasoningText === '' ? undefined : { turn, step, text, reasoningText } })
   }
 
   setStatus(status: AgentStatus): void {

@@ -43,6 +43,7 @@ const cyan = fg(theme.secondary)
 const red = fg(theme.error)
 const green = fg(theme.success)
 const yellow = fg(theme.warning)
+const violet = fg(theme.reasoning)
 
 /** Line cap for a presented tool card's body; `<Static>` prints are permanent, so a long card gets a summary, not a fold. */
 const MAX_CARD_LINES = 20
@@ -63,12 +64,29 @@ export function textOf(content: readonly ContentBlock[]): string {
     .join('')
 }
 
+/** Join the reasoning/thinking blocks of a message content array, distinct from its visible `textOf`. */
+export function reasoningOf(content: readonly ContentBlock[]): string {
+  return content
+    .filter(block => block.type === 'reasoning')
+    .map(block => block.text)
+    .join('')
+}
+
+/** Format one message's reasoning/thinking content: a dim violet label plus dim violet body, set apart from the assistant's visible text. */
+function formatReasoning(text: string): string {
+  return [violet('✦ thinking'), ...splitLines(text).map(violet)].join('\n')
+}
+
 /**
- * Format the in-progress step's accumulated text, mirroring `assistant/message`'s
- * framing so the line doesn't visually jump once it settles into `<Static>`.
+ * Format the in-progress step's accumulated text (and any reasoning alongside
+ * it), mirroring `assistant/message`'s framing so the block doesn't visually
+ * jump once it settles into `<Static>`.
  */
-export function formatStreamingText(text: string): string | undefined {
-  return text === '' ? undefined : `\n${renderMarkdown(text)}\n`
+export function formatStreamingText(text: string, reasoningText = ''): string | undefined {
+  const parts: string[] = []
+  if (reasoningText !== '') parts.push(formatReasoning(reasoningText))
+  if (text !== '') parts.push(renderMarkdown(text))
+  return parts.length === 0 ? undefined : `\n${parts.join('\n')}\n`
 }
 
 /** One local shell-escape run's header + output lines, shared by the settled and in-flight renderers below. `exitCode` is `null` while still running. */
@@ -301,8 +319,8 @@ export function formatEvent(event: SessionEvent, options: RenderOptions): string
       return `${dim('⊕ context ›')} ${source.kind}`
     }
     case 'assistant/message': {
-      const text = textOf(event.data.message.content)
-      return text === '' ? undefined : `\n${renderMarkdown(text)}\n`
+      const content = event.data.message.content
+      return formatStreamingText(textOf(content), reasoningOf(content))
     }
     case 'tool/call': {
       return formatToolCall(event.data.name, event.data.arguments, options.getTool)
