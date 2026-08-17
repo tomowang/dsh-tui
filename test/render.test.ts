@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { ToolCallView, ToolDefinition, ToolResultView } from '@deepseek-ai/dsh-tools'
-import { formatEvent, formatShellRun, formatShellRunLive, formatStreamingText, truncate, type RenderOptions } from '../src/render.js'
+import {
+  formatEvent,
+  formatShellRun,
+  formatShellRunLive,
+  formatStreamingText,
+  formatToolCardDetail,
+  formatToolCardSummary,
+  truncate,
+  type RenderOptions,
+} from '../src/render.js'
 
 /** Build a minimal event fixture; formatEvent only ever reads `.type`/`.data`. */
 function event(type: string, data: unknown): SessionEvent {
@@ -446,6 +455,18 @@ describe('formatEvent — tool/result', () => {
     expect(line).toContain('[exit 0]')
   })
 
+  it('caps the transcript body at MAX_CARD_LINES and marks what was omitted', () => {
+    const output = Array.from({ length: 24 }, (_, index) => `line ${index + 1}`).join('\n')
+    const tool = fakeTool({ presentResult: () => ({ card: 'terminal', output }) })
+    const line = formatEvent(resultEvent('call-1', [{ type: 'text', text: 'raw' }], false), {
+      replay: false,
+      getTool: toolResolver('bash', tool),
+      getToolCall: callResolver('call-1', { name: 'bash', arguments: '{}' }),
+    })
+    expect(line).toContain('omitted')
+    expect(line).not.toContain('line 24')
+  })
+
   it('renders a diff card from the completed FileDiffs', () => {
     const view: ToolResultView = {
       card: 'diff',
@@ -528,6 +549,42 @@ describe('formatEvent — tool/result', () => {
     )
     expect(line).toContain('Example')
     expect(line).toContain('https://example.com')
+  })
+})
+
+describe('formatToolCardDetail / formatToolCardSummary', () => {
+  it('formatToolCardDetail returns the full, uncapped card body for the Tool Cards overlay', () => {
+    const output = Array.from({ length: 24 }, (_, index) => `line ${index + 1}`).join('\n')
+    const tool = fakeTool({ presentResult: () => ({ card: 'terminal', output }) })
+    const options: RenderOptions = {
+      replay: false,
+      getTool: toolResolver('bash', tool),
+      getToolCall: callResolver('call-1', { name: 'bash', arguments: '{}' }),
+    }
+    const lines = formatToolCardDetail(resultEvent('call-1', [{ type: 'text', text: 'raw' }], false), options)
+    const joined = lines.join('\n')
+    expect(joined).toContain('line 24')
+    expect(joined).not.toContain('omitted')
+  })
+
+  it('formatToolCardSummary is always a single line, even for a multi-line card', () => {
+    const view: ToolResultView = { card: 'terminal', output: 'total 0\ndrwx------', exitCode: 0 }
+    const tool = fakeTool({ presentResult: () => view })
+    const options: RenderOptions = {
+      replay: false,
+      getTool: toolResolver('bash', tool),
+      getToolCall: callResolver('call-1', { name: 'bash', arguments: '{"command":"ls -la"}' }),
+    }
+    const summary = formatToolCardSummary(resultEvent('call-1', [{ type: 'text', text: 'raw' }], false), options)
+    expect(summary.includes('\n')).toBe(false)
+  })
+
+  it('formatToolCardSummary falls back to the flat call line when there is no presenter', () => {
+    const summary = formatToolCardSummary(event('tool/call', { name: 'read_file', arguments: '{"path":"/tmp/foo.txt"}' }), {
+      replay: false,
+    })
+    expect(summary).toContain('read_file')
+    expect(summary.includes('\n')).toBe(false)
   })
 })
 

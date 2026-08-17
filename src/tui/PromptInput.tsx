@@ -93,6 +93,11 @@ export interface TuiActions {
   /** Close the `/trajectory` overlay. */
   closeTrajectory(): void
 
+  /** Open the Tool Cards inspector, where individual cards can expand/collapse. */
+  openToolCards(): void
+  /** Close the Tool Cards inspector. */
+  closeToolCards(): void
+
   /** Open the `/context` usage overlay. */
   openContext(): void
   /** Close the `/context` overlay. */
@@ -440,6 +445,12 @@ export function PromptInput({ status, actions, state, dispatch, history, fileInd
   }
 
   useInput((input, key) => {
+    // The permanent transcript is deliberately append-only for native
+    // scrollback, so tool-card expansion lives in its own mutable inspector.
+    if (key.ctrl && input === 'o') {
+      actions.openToolCards()
+      return
+    }
     // A leading `!` at an empty prompt switches Enter to run a local shell
     // command instead of sending to the agent, mirroring Claude Code's bash
     // mode. The `!` itself is consumed rather than inserted, so Backspace on

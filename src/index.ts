@@ -842,6 +842,7 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
         const commands = SLASH_COMMANDS.map(c => `  ${c.command.padEnd(SLASH_COMMAND_WIDTH)}  ${c.description}`).join('\n')
         const shortcuts = [
           '  Shift+Tab       cycle the permission preset',
+          '  Ctrl+O          open Tool Cards (expand/collapse details)',
           '  !               on an empty prompt, enter shell mode (Enter runs a local command)',
           '  @               open the file-mention dropdown',
           '  Ctrl+C, Ctrl+D  cancel a running turn; press twice on an idle empty line to exit',
@@ -963,6 +964,12 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
         store.openTrajectory()
       },
       closeTrajectory() {
+        store.closeOverlay()
+      },
+      openToolCards() {
+        store.openToolCards()
+      },
+      closeToolCards() {
         store.closeOverlay()
       },
 

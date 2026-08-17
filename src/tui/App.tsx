@@ -21,6 +21,7 @@ import { PermissionIndicator } from './PermissionIndicator.js'
 import { PromptInput, bufferReducer, initialState, type TuiActions } from './PromptInput.js'
 import { ModelProfileOverlay } from './modelProfile/ModelProfileOverlay.js'
 import { TrajectoryOverlay } from './trajectory/TrajectoryOverlay.js'
+import { ToolCardsOverlay } from './toolCards/ToolCardsOverlay.js'
 import { ContextOverlay } from './context/ContextOverlay.js'
 import { PluginsOverlay } from './plugins/PluginsOverlay.js'
 import { AgentPresetsOverlay } from './agentPresets/AgentPresetsOverlay.js'
@@ -34,6 +35,15 @@ import { formatEvent, formatStreamingText, formatShellRun, formatShellRunLive, t
 import { theme } from './theme.js'
 
 export type { TuiActions } from './PromptInput.js'
+
+// A fixed cap, not a fraction of `rows`: this app has no alternate-screen
+// buffer, so a live frame taller than what fits beside the existing
+// transcript forces the real terminal to scroll — a scroll Ink cannot undo
+// when the overlay later shrinks back down, leaving the next short frame
+// (e.g. the prompt) stranded mid-screen instead of pinned to the bottom.
+// Bounding the overlay's own footprint keeps it (most terminals) within one
+// screen's worth of content next to whatever's already printed above it.
+const TOOL_CARDS_OVERLAY_ROWS = 24
 
 // Ink only tracks one `<Static>` node per app (a single field on its root
 // node) — a second sibling `<Static>` silently overwrites the first instead
@@ -161,17 +171,26 @@ export function App({
       const listRows = mp.providers?.length ?? 1
       return 2 + errorLine + loadingLine + listRows
     }
+    // Full-screen overlays size off the terminal's own row count, not
+    // `staticLines` — once a session has scrolled past one screen,
+    // `rows - staticLines` goes deeply negative and every overlay collapses
+    // to its floor regardless of the terminal's actual height. `staticLines`
+    // belongs only to `spacerHeight` below, which pads the live region so it
+    // sits at the bottom of the screen before the transcript has filled it.
     if (state.overlay.kind === 'trajectory') {
-      return Math.max(10, rows - staticLines - 1)
+      return Math.max(10, rows - 1)
+    }
+    if (state.overlay.kind === 'toolCards') {
+      return Math.max(6, Math.min(rows - 1, TOOL_CARDS_OVERLAY_ROWS))
     }
     if (state.overlay.kind === 'context') {
       return 7
     }
     if (state.overlay.kind === 'plugins') {
-      return Math.max(10, rows - staticLines - 1)
+      return Math.max(10, rows - 1)
     }
     if (state.overlay.kind === 'agentPresets') {
-      return Math.max(10, rows - staticLines - 1)
+      return Math.max(10, rows - 1)
     }
     if (state.overlay.kind === 'approval') {
       const reasonLine = state.overlay.approval.reason === undefined ? 0 : 1
@@ -211,7 +230,6 @@ export function App({
     state.permission,
     statsLine,
     rows,
-    staticLines,
   ])
 
   // Ink appends a trailing newline to interactive frames (output + '\n'),
@@ -237,6 +255,8 @@ export function App({
           <ModelProfileOverlay modelProfile={state.overlay.modelProfile} actions={actions} />
         ) : state.overlay.kind === 'trajectory' ? (
           <TrajectoryOverlay events={state.events} availableRows={dynamicLines} actions={actions} />
+        ) : state.overlay.kind === 'toolCards' ? (
+          <ToolCardsOverlay events={state.events} availableRows={dynamicLines} actions={actions} getTool={getTool} getToolCall={getToolCall} />
         ) : state.overlay.kind === 'context' ? (
           <ContextOverlay pressure={state.stats.contextPressure} breakdown={state.stats.contextBreakdown} actions={actions} />
         ) : state.overlay.kind === 'plugins' ? (

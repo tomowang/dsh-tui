@@ -45,7 +45,7 @@ const green = fg(theme.success)
 const yellow = fg(theme.warning)
 const violet = fg(theme.reasoning)
 
-/** Line cap for a presented tool card's body; `<Static>` prints are permanent, so a long card gets a summary, not a fold. */
+/** Line cap for a presented tool card's body in the permanent transcript; `<Static>` prints can't be redrawn, so a long card is summarized there — full detail is available via `formatToolCardDetail`, scrolled in the Tool Cards overlay. */
 const MAX_CARD_LINES = 20
 /** `diff` package's `maxEditLength`: bounds worst-case diff cost on a huge file, mirroring the removed first-party TUI's default. */
 const MAX_DIFF_EDIT_LENGTH = 1000
@@ -234,6 +234,29 @@ function presentResultSafely(
   }
 }
 
+/** Resolved inputs for rendering a settled `tool/result` event. */
+type ToolResultResolution =
+  | { readonly kind: 'error'; readonly line: string }
+  | { readonly kind: 'ok'; readonly icon: string; readonly content: readonly ContentBlock[]; readonly presented: { name: string; view: ToolResultView } | undefined }
+
+/** Shared by the transcript's compact line and the Tool Cards overlay's summary/detail, so all three read the same icon and presented view instead of re-deriving it. */
+function resolveToolResult(event: Extract<SessionEvent, { type: 'tool/result' }>, options: RenderOptions): ToolResultResolution {
+  // `error` marks an internal/harness-level failure (distinct from `isError`
+  // on the block, which is the ordinary model-facing outcome). An internal
+  // failure is the harness's to report, not a tool's to reformat, so it
+  // bypasses presentation entirely.
+  if (event.data.error !== undefined) {
+    return { kind: 'error', line: `${red('✖')} ${event.data.error.code}: ${event.data.error.name}` }
+  }
+  const [block] = event.data.message.content
+  const failed = block.isError === true
+  const icon = failed ? red('✖') : cyan('✓')
+  const callId = event.data.message.source.callId
+  const result: ToolResult = { content: block.content, isError: failed, ...event.data.meta !== undefined ? { meta: event.data.meta } : {} }
+  const presented = presentResultSafely(callId, result, options)
+  return { kind: 'ok', icon, content: block.content, presented }
+}
+
 /** A presented completed call's lines: an outcome-colored header plus card-specific body. */
 function formatResultLines(fallbackName: string, icon: string, rawContent: readonly ContentBlock[], view: ToolResultView): string[] {
   const header = `${icon} ${view.title ?? fallbackName}`
@@ -326,24 +349,14 @@ export function formatEvent(event: SessionEvent, options: RenderOptions): string
       return formatToolCall(event.data.name, event.data.arguments, options.getTool)
     }
     case 'tool/result': {
-      // `error` marks an internal/harness-level failure (distinct from
-      // `isError` on the block, which is the ordinary model-facing outcome).
-      // An internal failure is the harness's to report, not a tool's to
-      // reformat, so it bypasses presentation entirely.
-      if (event.data.error !== undefined) {
-        return `${red('✖')} ${event.data.error.code}: ${event.data.error.name}`
-      }
-      const [block] = event.data.message.content
-      const failed = block.isError === true
-      const icon = failed ? red('✖') : cyan('✓')
-      const callId = event.data.message.source.callId
-      const result: ToolResult = { content: block.content, isError: failed, ...event.data.meta !== undefined ? { meta: event.data.meta } : {} }
-      const presented = presentResultSafely(callId, result, options)
+      const resolved = resolveToolResult(event, options)
+      if (resolved.kind === 'error') return resolved.line
+      const { icon, content, presented } = resolved
       if (presented === undefined) {
-        const text = truncate(textOf(block.content), 100)
+        const text = truncate(textOf(content), 100)
         return text === '' ? icon : `${icon} ${dim(text)}`
       }
-      const lines = capLines(formatResultLines(presented.name, icon, block.content, presented.view), MAX_CARD_LINES)
+      const lines = capLines(formatResultLines(presented.name, icon, content, presented.view), MAX_CARD_LINES)
       return lines.length <= 1 ? lines[0] : `\n${lines.join('\n')}\n`
     }
     case 'turn/end': {
@@ -365,4 +378,52 @@ export function formatEvent(event: SessionEvent, options: RenderOptions): string
       // Merge-extensible union: events this viewer does not present fall through.
       return undefined
   }
+}
+
+/**
+ * A `tool/call`/`tool/result` event's one-line summary — the Tool Cards
+ * overlay's collapsed row. Distinct from `formatEvent`'s own card rendering
+ * (which can be multi-line even at its most compact), because the overlay
+ * needs a genuine single line to toggle open from.
+ */
+export function formatToolCardSummary(event: SessionEvent, options: RenderOptions): string {
+  if (event.type === 'tool/call') {
+    const view = presentCallSafely(event.data.name, event.data.arguments, options.getTool)
+    return view === undefined ? fallbackCallLine(event.data.name, event.data.arguments) : `${cyan('⚙')} ${view.title}`
+  }
+  if (event.type === 'tool/result') {
+    const resolved = resolveToolResult(event, options)
+    if (resolved.kind === 'error') return resolved.line
+    const { icon, content, presented } = resolved
+    if (presented === undefined) {
+      const text = truncate(textOf(content), 100)
+      return text === '' ? icon : `${icon} ${dim(text)}`
+    }
+    return `${icon} ${presented.view.title ?? presented.name}`
+  }
+  return ''
+}
+
+/**
+ * Full, uncapped presentation lines for a `tool/call`/`tool/result` event.
+ * Unlike `formatEvent`, this never truncates or omits — the Tool Cards
+ * overlay scrolls its own window over the result instead of relying on a
+ * fixed line cap, so it needs the complete card body to scroll through.
+ */
+export function formatToolCardDetail(event: SessionEvent, options: RenderOptions): string[] {
+  if (event.type === 'tool/call') {
+    const view = presentCallSafely(event.data.name, event.data.arguments, options.getTool)
+    return view === undefined ? [fallbackCallLine(event.data.name, event.data.arguments)] : formatCallLines(view)
+  }
+  if (event.type === 'tool/result') {
+    const resolved = resolveToolResult(event, options)
+    if (resolved.kind === 'error') return [resolved.line]
+    const { icon, content, presented } = resolved
+    if (presented === undefined) {
+      const text = textOf(content)
+      return text === '' ? [icon] : [icon, ...splitLines(text)]
+    }
+    return formatResultLines(presented.name, icon, content, presented.view)
+  }
+  return []
 }

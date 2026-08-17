@@ -54,6 +54,7 @@ export type Overlay =
   | { readonly kind: 'none' }
   | { readonly kind: 'modelProfile'; readonly modelProfile: ModelProfileOverlayState }
   | { readonly kind: 'trajectory' }
+  | { readonly kind: 'toolCards' }
   | { readonly kind: 'context' }
   | { readonly kind: 'plugins'; readonly rows: readonly PluginRow[] }
   | { readonly kind: 'agentPresets'; readonly agentPresets: AgentPresetsOverlayState }
@@ -316,6 +317,11 @@ export class TuiStore {
   /** Open the `/trajectory` ledger overlay. */
   openTrajectory(): void {
     this.set({ overlay: { kind: 'trajectory' } })
+  }
+
+  /** Open the expandable Tool Cards inspector. */
+  openToolCards(): void {
+    this.set({ overlay: { kind: 'toolCards' } })
   }
 
   /** Open the `/context` usage overlay. */
