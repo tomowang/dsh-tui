@@ -12,7 +12,7 @@
  * @module @tomowang/dsh-tui/tui/trajectory/TrajectoryOverlay
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Box, Text, useInput } from 'ink'
 import TextInput from 'ink-text-input'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
@@ -58,6 +58,13 @@ export function TrajectoryOverlay({ events, availableRows, actions }: Trajectory
   const effectiveIndex = selectedIndex === -1 ? records.length - 1 : selectedIndex
   const selectedRecord = records[effectiveIndex]?.record
 
+  // Collapsing a turn can fold away every remaining record row (e.g. the turn's
+  // only surviving row is a step boundary), leaving `selectedRecord` undefined
+  // with no record left to read a turn number off of. Remember the last turn a
+  // record was actually selected in so `c` can still uncollapse it.
+  const lastSelectedTurnRef = useRef<number | undefined>(undefined)
+  if (selectedRecord !== undefined) lastSelectedTurnRef.current = selectedRecord.turn
+
   const selectedRowIndex =
     selectedRecord === undefined ? -1 : filteredRows.findIndex(row => row.kind === 'record' && row.record.id === selectedRecord.id)
 
@@ -89,8 +96,8 @@ export function TrajectoryOverlay({ events, availableRows, actions }: Trajectory
   }
 
   function toggleCollapse(): void {
-    if (selectedRecord === undefined) return
-    const { turn } = selectedRecord
+    const turn = selectedRecord?.turn ?? lastSelectedTurnRef.current
+    if (turn === undefined) return
     setCollapsedTurns(prev => {
       const next = new Set(prev)
       if (next.has(turn)) next.delete(turn)

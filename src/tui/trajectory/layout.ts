@@ -101,7 +101,10 @@ export function buildTrajectoryRows(
       }
       case 'user/message': {
         const label = userLabel(event.data)
-        const text = textOf(event.data.content)
+        // Only a direct human prompt exposes its full text on the Payload tab;
+        // synthetic plugin-injected context stays collapsed there too, matching
+        // the label (see `userLabel` and `formatEvent`'s `user/message` case).
+        const text = event.data.source.kind === 'user' ? textOf(event.data.content) : ''
         const record: RecordDraft = {
           id: `${event.seq}`,
           kind: 'user',

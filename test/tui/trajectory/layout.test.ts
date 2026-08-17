@@ -90,6 +90,22 @@ describe('buildTrajectoryRows', () => {
     expect(turn1).toMatchObject({ kind: 'turn', turn: 1, aborted: undefined })
   })
 
+  it('collapses a plugin-injected user/message to a label with no payload', () => {
+    const rows = buildTrajectoryRows(
+      [
+        event('turn/start', 1, { turn: 1 }),
+        event('user/message', 2, {
+          source: { kind: 'plugin', plugin: 'skill-loader', form: 'notice', summary: 'loaded foo skill' },
+          content: [{ type: 'text', text: 'full skill body that should never surface in the ledger' }],
+        }),
+      ],
+      new Set(),
+    )
+    const record = recordRows(rows)[0]?.record
+    expect(record?.label).toBe('context › skill-loader · loaded foo skill')
+    expect(record?.payload).toBeUndefined()
+  })
+
   it('folds a collapsed turn to its first record plus a summary row', () => {
     const rows = buildTrajectoryRows(fixtureEvents(), new Set([1]))
     const turn1Index = rows.findIndex(row => row.kind === 'turn' && row.turn === 1)
