@@ -326,7 +326,7 @@ class TuiApp implements TuiHandle {
       case 'modelProfile':
         return new ModelProfileOverlay(store, actions)
       case 'trajectory':
-        return new TrajectoryOverlay(this.tui, store, actions)
+        return new TrajectoryOverlay(this.tui, store, actions, getTool)
       case 'toolCards':
         return new ToolCardsOverlay(this.tui, store, actions, getTool, getToolCall)
       case 'context':

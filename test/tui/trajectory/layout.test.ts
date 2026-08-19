@@ -78,6 +78,18 @@ describe('buildTrajectoryRows', () => {
     expect(call?.record.result).toBe('denied')
   })
 
+  it('carries the tool name on a call record, for the Schema tab lookup', () => {
+    const rows = buildTrajectoryRows(fixtureEvents(), new Set())
+    const call = recordRows(rows).find(row => row.record.id === 'c1')
+    expect(call?.record.toolName).toBe('bash')
+  })
+
+  it('leaves toolName undefined for a user/assistant record', () => {
+    const rows = buildTrajectoryRows(fixtureEvents(), new Set())
+    const kinds = recordRows(rows).filter(row => row.record.kind === 'user' || row.record.kind === 'assistant')
+    for (const row of kinds) expect(row.record.toolName).toBeUndefined()
+  })
+
   it('attaches an abort note to the turn row on a canceled turn', () => {
     const rows = buildTrajectoryRows(fixtureEvents(), new Set())
     const turn2 = rows.find(row => row.kind === 'turn' && row.turn === 2)
@@ -90,21 +102,32 @@ describe('buildTrajectoryRows', () => {
     expect(turn1).toMatchObject({ kind: 'turn', turn: 1, aborted: undefined })
   })
 
-  it('classifies a plugin-injected user/message as a context record with a label and no payload', () => {
+  it('classifies a plugin-injected user/message as a context record with a collapsed label', () => {
     const rows = buildTrajectoryRows(
       [
         event('turn/start', 1, { turn: 1 }),
         event('user/message', 2, {
           source: { kind: 'plugin', plugin: 'skill-loader', form: 'notice', summary: 'loaded foo skill' },
-          content: [{ type: 'text', text: 'full skill body that should never surface in the ledger' }],
+          content: [{ type: 'text', text: 'full skill body' }],
         }),
       ],
       new Set(),
     )
     const record = recordRows(rows)[0]?.record
     expect(record?.kind).toBe('context')
+    // The one-line ledger label stays collapsed to the plugin/summary tag...
     expect(record?.label).toBe('skill-loader · loaded foo skill')
-    expect(record?.payload).toBeUndefined()
+    // ...but `payload` (reached only via the Preview/Raw tabs, not the
+    // ledger row itself) carries the full injected content, matching the
+    // web ledger.
+    expect(record?.payload).toBe('full skill body')
+    expect(record?.source).toEqual({ kind: 'plugin', plugin: 'skill-loader', form: 'notice', summary: 'loaded foo skill' })
+  })
+
+  it('carries source for a direct human prompt too, not just injected context', () => {
+    const rows = buildTrajectoryRows(fixtureEvents(), new Set())
+    const record = recordRows(rows).find(row => row.record.kind === 'user')?.record
+    expect(record?.source).toEqual({ kind: 'user' })
   })
 
   it('falls back to a reasoning preview for an assistant message with only thinking and tool calls', () => {
@@ -121,7 +144,11 @@ describe('buildTrajectoryRows', () => {
     )
     const assistant = recordRows(rows).find(row => row.record.kind === 'assistant')
     expect(assistant?.record.label).toBe('let me check the file first')
-    expect(assistant?.record.payload).toBe('let me check the file first')
+    // The label falls back to reasoning for display, but `payload` (visible
+    // text) and `reasoning` stay distinct so the Preview/Raw tabs can show
+    // both when present — see `layout.ts`'s `assistant/message` case.
+    expect(assistant?.record.payload).toBeUndefined()
+    expect(assistant?.record.reasoning).toBe('let me check the file first')
   })
 
   it('still labels an assistant message "(tool calls only)" with neither text nor reasoning', () => {
@@ -160,6 +187,10 @@ describe('buildTrajectoryRows', () => {
     )
     const assistant = recordRows(rows).find(row => row.record.kind === 'assistant')
     expect(assistant?.record.label).toBe('the answer')
+    // Unlike the label, `payload` and `reasoning` don't collapse into one
+    // another — both are kept for the Preview/Raw tabs.
+    expect(assistant?.record.payload).toBe('the answer')
+    expect(assistant?.record.reasoning).toBe('thinking it through')
   })
 
   it('folds a collapsed turn to its first record plus a summary row', () => {

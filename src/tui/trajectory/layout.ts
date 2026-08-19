@@ -27,6 +27,9 @@ interface RecordDraft {
   summary: string
   payload: string | undefined
   result: string | undefined
+  reasoning: string | undefined
+  source: unknown
+  toolName: string | undefined
 }
 
 interface TurnRowDraft {
@@ -102,10 +105,14 @@ export function buildTrajectoryRows(
       }
       case 'user/message': {
         const label = userLabel(event.data)
-        // Only a direct human prompt exposes its full text on the Payload tab;
-        // synthetic plugin-injected context stays collapsed there too, matching
-        // the label (see `userLabel` and `formatEvent`'s `user/message` case).
-        const text = event.data.source.kind === 'user' ? textOf(event.data.content) : ''
+        // The one-line ledger label stays collapsed for injected context
+        // (see `userLabel`, matching `formatEvent`'s `user/message` case),
+        // but the Preview/Raw/Source tabs — reached only by deliberately
+        // opening the inspector and selecting the row — show the full
+        // content for both a direct prompt and injected context, mirroring
+        // the web ledger (`inputCellDetail` in `layout.ts` there sets
+        // `inputDetail` unconditionally for every `InputNode` kind).
+        const text = textOf(event.data.content)
         const record: RecordDraft = {
           id: `${event.seq}`,
           kind: event.data.source.kind === 'user' ? 'user' : 'context',
@@ -119,6 +126,9 @@ export function buildTrajectoryRows(
           summary: label,
           payload: text === '' ? undefined : text,
           result: undefined,
+          reasoning: undefined,
+          source: event.data.source,
+          toolName: undefined,
         }
         rows.push({ kind: 'record', record })
         break
@@ -127,9 +137,13 @@ export function buildTrajectoryRows(
         const content = event.data.message.content
         // Mirrors the web ledger: fall back to a preview of the reasoning/thinking
         // block when there's no visible text, only labeling it "(tool calls only)"
-        // when there's neither — see `recordDisplayText` in the web ledger.
+        // when there's neither — see `recordDisplayText` in the web ledger. Unlike
+        // the label, `payload`/`reasoning` below keep text and reasoning distinct
+        // (rather than one falling back to the other) so the Preview/Raw tabs can
+        // show both, mirroring the transcript's own reasoning-then-answer framing.
         const text = textOf(content)
-        const displaySource = text === '' ? reasoningOf(content) : text
+        const reasoningText = reasoningOf(content)
+        const displaySource = text === '' ? reasoningText : text
         const label = displaySource === '' ? '(tool calls only)' : truncate(displaySource, LABEL_LIMIT)
         const record: RecordDraft = {
           id: `${event.seq}`,
@@ -142,8 +156,11 @@ export function buildTrajectoryRows(
           label,
           isError: false,
           summary: label,
-          payload: displaySource === '' ? undefined : displaySource,
+          payload: text === '' ? undefined : text,
           result: undefined,
+          reasoning: reasoningText === '' ? undefined : reasoningText,
+          source: undefined,
+          toolName: undefined,
         }
         rows.push({ kind: 'record', record })
         break
@@ -163,6 +180,9 @@ export function buildTrajectoryRows(
           summary: label,
           payload: prettyJson(event.data.arguments),
           result: undefined,
+          reasoning: undefined,
+          source: undefined,
+          toolName: event.data.name,
         }
         pendingCalls.set(event.data.callId, record)
         rows.push({ kind: 'record', record })
@@ -198,6 +218,9 @@ export function buildTrajectoryRows(
             summary: label,
             payload: undefined,
             result: resultText,
+            reasoning: undefined,
+            source: undefined,
+            toolName: undefined,
           }
           rows.push({ kind: 'record', record })
         }
@@ -219,6 +242,9 @@ export function buildTrajectoryRows(
           summary: label,
           payload: JSON.stringify(event.data.header, null, 2),
           result: undefined,
+          reasoning: undefined,
+          source: undefined,
+          toolName: undefined,
         }
         rows.push({ kind: 'record', record })
         break

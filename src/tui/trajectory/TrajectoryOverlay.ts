@@ -13,12 +13,13 @@
 
 import type { Component, TUI } from '@earendil-works/pi-tui'
 import { Key, matchesKey } from '@earendil-works/pi-tui'
+import type { RenderOptions } from '../../render.js'
 import type { TuiActions } from '../actions.js'
 import type { TuiStore } from '../store.js'
 import { buildTrajectoryRows } from './layout.js'
 import { buildLedgerLines } from './TrajectoryLedger.js'
 import { buildDetailLines } from './TrajectoryDetail.js'
-import { TRAJECTORY_DETAIL_TABS, type TrajectoryDetailTab, type TrajectoryRow } from './types.js'
+import { detailTabsFor, type TrajectoryDetailTab, type TrajectoryRecord, type TrajectoryRow } from './types.js'
 import { emptyMiniTextField, miniTextFieldInput, renderMiniTextField, type MiniTextFieldState } from '../miniTextField.js'
 import { theme, fg } from '../theme.js'
 
@@ -41,13 +42,14 @@ export class TrajectoryOverlay implements Component {
     private readonly tui: TUI,
     private readonly store: TuiStore,
     private readonly actions: TuiActions,
+    private readonly getTool: RenderOptions['getTool'],
   ) {}
 
   invalidate(): void {}
 
   private heights(): { ledgerHeight: number; detailContentHeight: number } {
     const availableRows = Math.max(10, this.tui.terminal.rows - 1)
-    const chrome = 2 // header line + footer/filter line
+    const chrome = 4 // header line + blank line before/after the detail panel + footer/filter line
     const remaining = Math.max(6, availableRows - chrome)
     const detailContentHeight = Math.max(2, Math.floor(remaining / 2))
     const ledgerHeight = Math.max(3, remaining - detailContentHeight - 1) // -1 for the detail tab bar
@@ -66,12 +68,18 @@ export class TrajectoryOverlay implements Component {
     return { filteredRows, records }
   }
 
-  render(_width: number): string[] {
+  render(width: number): string[] {
     const { filteredRows, records } = this.computeRows()
     const selectedIndex = this.selectedId === undefined ? -1 : records.findIndex(row => row.record.id === this.selectedId)
     const effectiveIndex = selectedIndex === -1 ? records.length - 1 : selectedIndex
     const selectedRecord = records[effectiveIndex]?.record
     if (selectedRecord !== undefined) this.lastSelectedTurn = selectedRecord.turn
+    // A tab left active from a differently-kinded record (e.g. 'schema' from
+    // a tool call) may not apply to the newly selected one — fall back to
+    // Summary, which every kind has.
+    if (selectedRecord !== undefined && !detailTabsFor(selectedRecord).includes(this.detailTab)) {
+      this.detailTab = 'summary'
+    }
 
     const selectedRowIndex = selectedRecord === undefined ? -1 : filteredRows.findIndex(row => row.kind === 'record' && row.record.id === selectedRecord.id)
 
@@ -90,7 +98,9 @@ export class TrajectoryOverlay implements Component {
         ),
       ),
       ...buildLedgerLines(windowedRows, selectedRecord?.id),
-      ...buildDetailLines(selectedRecord, this.detailTab, detailContentHeight),
+      '',
+      ...buildDetailLines(selectedRecord, this.detailTab, detailContentHeight, this.getTool, width),
+      '',
     ]
     if (this.filterFocused) {
       lines.push(`/ ${renderMiniTextField(this.filter, true)}`)
@@ -109,17 +119,24 @@ export class TrajectoryOverlay implements Component {
     this.selectedId = records[next].record.id
   }
 
-  private cycleTab(delta: number): void {
-    const index = TRAJECTORY_DETAIL_TABS.indexOf(this.detailTab)
-    const next = (index + delta + TRAJECTORY_DETAIL_TABS.length) % TRAJECTORY_DETAIL_TABS.length
-    this.detailTab = TRAJECTORY_DETAIL_TABS[next]
-  }
-
-  private toggleCollapse(): void {
+  private selectedRecord(): TrajectoryRecord | undefined {
     const { records } = this.computeRows()
     const selectedIndex = this.selectedId === undefined ? -1 : records.findIndex(row => row.record.id === this.selectedId)
     const effectiveIndex = selectedIndex === -1 ? records.length - 1 : selectedIndex
-    const turn = records[effectiveIndex]?.record.turn ?? this.lastSelectedTurn
+    return records[effectiveIndex]?.record
+  }
+
+  private cycleTab(delta: number): void {
+    const record = this.selectedRecord()
+    if (record === undefined) return
+    const tabs = detailTabsFor(record)
+    const index = tabs.indexOf(this.detailTab)
+    const next = ((index === -1 ? 0 : index) + delta + tabs.length) % tabs.length
+    this.detailTab = tabs[next]
+  }
+
+  private toggleCollapse(): void {
+    const turn = this.selectedRecord()?.turn ?? this.lastSelectedTurn
     if (turn === undefined) return
     if (this.collapsedTurns.has(turn)) this.collapsedTurns.delete(turn)
     else this.collapsedTurns.add(turn)
