@@ -37,6 +37,22 @@ Both stdin and stdout must be real TTYs — `apply()` in `src/index.ts` throws l
 
 Before committing a feature (new/changed command, keybinding, overlay, or user-visible behavior), check whether `README.md` and this file describe the old behavior and update them in the same commit — not as a follow-up. `README.md` covers user-facing surface (Features, the terminal-commands/keyboard-shortcuts tables); this file's `## Architecture` and `## Current status / roadmap` cover implementation notes and the known-gaps list. A shipped feature still listed as a "known gap" here, or a new `/command`/shortcut missing from README's tables, counts as an incomplete change.
 
+## Commit scopes
+
+Every commit uses a [Conventional Commits](https://www.conventionalcommits.org/) `type(scope): subject`, drawn from this closed list — pick the one covering the primary area touched (a commit spanning several picks the most significant one, not a comma-joined list):
+
+| Scope | Covers |
+|---|---|
+| `tui` | `src/tui/**` (components, overlays, the store, the prompt editor, theme), `src/render.ts`, `src/markdown.ts` — the terminal UI and the session-log-to-terminal formatting it renders |
+| `plugin` | `src/index.ts` — Cordis plugin lifecycle, session/agent wiring, in-terminal approval/question answerers |
+| `startup` | `src/startup.ts`, `cordis.patch.yml` — CLI flag parsing and the bundle's plugin-tree patch |
+| `release` | Versioning, `CHANGELOG.md`, `cliff.toml`, the npm-publish workflow |
+| `deps` | Dependency-only changes not tied to a feature/fix |
+| `ci` | GitHub Actions workflows other than the release one |
+| `repo` | Repo-wide contributor/process docs not about one code area (e.g. this scope table) |
+
+A docs-only commit still scopes to the subject it documents (`docs(tui): …` for a README/AGENTS.md update about the terminal UI), not a generic catch-all. `git-cliff` groups the changelog by `type` (see `cliff.toml`'s `commit_parsers`), not `scope`, so scope is for readability/`git log --grep`, not changelog sectioning.
+
 ## Architecture
 
 **Two-plugin split (`src/startup.ts` → `src/index.ts`).** `tui-startup` parses this app's CLI flags (everything after the launcher's own args) via `dsh-cmdline`/commander and publishes them as an ordinary Cordis service (`TUI_STARTUP_SERVICE` / `tuiStartup`). The `tui` plugin injects that service rather than parsing argv itself — this mirrors how `dsh-headless` is structured and keeps startup-value resolution lazy/testable. The wiring between the two is declared in `cordis.patch.yml`, not in code.
