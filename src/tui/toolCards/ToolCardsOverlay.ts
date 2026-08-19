@@ -1,8 +1,8 @@
 /**
- * Mutable inspector for tool cards, opened by Ctrl+O/`/tools`: a selected
- * card expands into a scrollable window over its full, uncapped
- * presentation (`formatToolCardDetail`), rather than the transcript's
- * collapsed one-line summary.
+ * Mutable inspector for tool cards, opened by Ctrl+O/`/tools`: every row
+ * shows its full, uncapped presentation (`formatToolCardDetail`) by
+ * default, scrollable, rather than the transcript's collapsed one-line
+ * summary — `Enter`/`Space` collapses a row back down, per-row.
  * @module @tomowang/dsh-tui/tui/toolCards/ToolCardsOverlay
  */
 
@@ -32,7 +32,7 @@ interface ToolCardRow {
   readonly result: SessionEvent | undefined
 }
 
-/** Stable identity for a row across its pending → resolved transition — the call's own `seq` when there is one, so `expanded`/scroll state survives its result landing. */
+/** Stable identity for a row across its pending → resolved transition — the call's own `seq` when there is one, so `collapsed`/scroll state survives its result landing. */
 function rowKey(row: ToolCardRow): number {
   return (row.call ?? row.result)!.seq
 }
@@ -54,7 +54,11 @@ function detailOf(row: ToolCardRow, options: RenderOptions): string[] {
 
 export class ToolCardsOverlay implements Component {
   private selected: number | undefined
-  private readonly expanded = new Set<number>()
+  // Rows expand by default; this tracks the opt-out (a row the reader
+  // explicitly collapsed), inverted from an "expanded" allowlist so a fresh
+  // call/result pair shows full detail immediately instead of needing an
+  // Enter/Space per row.
+  private readonly collapsed = new Set<number>()
   private scrollOffset = 0
   private lastRowKey: number | undefined
   private lastOpen = false
@@ -87,7 +91,7 @@ export class ToolCardsOverlay implements Component {
   }
 
   private contentRows(): number {
-    const availableRows = Math.max(6, Math.min(this.tui.terminal.rows - 1, 24))
+    const availableRows = Math.max(6, this.tui.terminal.rows - 1)
     const chrome = 4 // header, position/scroll line, blank separator, footer
     return Math.max(1, availableRows - chrome)
   }
@@ -97,7 +101,7 @@ export class ToolCardsOverlay implements Component {
     const index = cards.length === 0 ? 0 : Math.min(this.selected ?? cards.length - 1, cards.length - 1)
     const row = cards[index]
     const key = row === undefined ? undefined : rowKey(row)
-    const open = key !== undefined && this.expanded.has(key)
+    const open = key !== undefined && !this.collapsed.has(key)
 
     // A newly selected or newly opened card always starts scrolled to its top.
     if (key !== this.lastRowKey || open !== this.lastOpen) {
@@ -132,9 +136,7 @@ export class ToolCardsOverlay implements Component {
     }
     lines.push('')
     lines.push(
-      muted(
-        `${open ? '↑↓ scroll · PgUp/PgDn/Home/End · Enter/Space/← collapse' : '↑↓ select · Enter/Space/→ expand'} · Ctrl+O/Esc close`,
-      ),
+      muted(`↑↓ select · PgUp/PgDn/Home/End scroll · Enter/Space ${open ? 'collapse' : 'expand'} · Ctrl+O/Esc close`),
     )
     return lines
   }
@@ -156,8 +158,8 @@ export class ToolCardsOverlay implements Component {
     const row = cards[index]
     if (row === undefined) return
     const key = rowKey(row)
-    if (this.expanded.has(key)) this.expanded.delete(key)
-    else this.expanded.add(key)
+    if (this.collapsed.has(key)) this.collapsed.delete(key)
+    else this.collapsed.add(key)
   }
 
   handleInput(data: string): void {
@@ -169,22 +171,21 @@ export class ToolCardsOverlay implements Component {
     const index = cards.length === 0 ? 0 : Math.min(this.selected ?? cards.length - 1, cards.length - 1)
     const row = cards[index]
     const key = row === undefined ? undefined : rowKey(row)
-    const open = key !== undefined && this.expanded.has(key)
+    const open = key !== undefined && !this.collapsed.has(key)
     const contentRows = this.contentRows()
     const options: RenderOptions = { replay: false, getTool: this.getTool, getToolCall: this.getToolCall }
     const detailLines = row === undefined || !open ? undefined : detailOf(row, options)
     const maxScrollOffset = Math.max(0, (detailLines?.length ?? 0) - contentRows)
 
-    if (open) {
-      if (matchesKey(data, Key.pageUp)) return this.scroll(-contentRows, maxScrollOffset)
-      if (matchesKey(data, Key.pageDown)) return this.scroll(contentRows, maxScrollOffset)
-      if (matchesKey(data, Key.home)) return this.scroll(-maxScrollOffset, maxScrollOffset)
-      if (matchesKey(data, Key.end)) return this.scroll(maxScrollOffset, maxScrollOffset)
-      if (matchesKey(data, Key.up) || matchesKey(data, Key.ctrl('p'))) return this.scroll(-1, maxScrollOffset)
-      if (matchesKey(data, Key.down) || matchesKey(data, Key.ctrl('n'))) return this.scroll(1, maxScrollOffset)
-      if (matchesKey(data, Key.enter) || data === ' ' || matchesKey(data, Key.left)) return this.toggle()
-      return
-    }
+    // Every row is expanded by default, so ↑↓ has to stay "move between
+    // cards" rather than "scroll the open card" (its old, closed-only
+    // meaning) — otherwise arrow-key browsing would be unreachable without
+    // first collapsing each card. Scrolling long content lives on its own
+    // keys instead.
+    if (matchesKey(data, Key.pageUp)) return this.scroll(-contentRows, maxScrollOffset)
+    if (matchesKey(data, Key.pageDown)) return this.scroll(contentRows, maxScrollOffset)
+    if (matchesKey(data, Key.home)) return this.scroll(-maxScrollOffset, maxScrollOffset)
+    if (matchesKey(data, Key.end)) return this.scroll(maxScrollOffset, maxScrollOffset)
     if (matchesKey(data, Key.up) || matchesKey(data, Key.ctrl('p'))) {
       this.move(-1)
       return
@@ -193,6 +194,6 @@ export class ToolCardsOverlay implements Component {
       this.move(1)
       return
     }
-    if (matchesKey(data, Key.enter) || data === ' ' || matchesKey(data, Key.right)) this.toggle()
+    if (matchesKey(data, Key.enter) || data === ' ') this.toggle()
   }
 }

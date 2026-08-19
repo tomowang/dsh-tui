@@ -49,7 +49,7 @@ export class TrajectoryOverlay implements Component {
     const availableRows = Math.max(10, this.tui.terminal.rows - 1)
     const chrome = 2 // header line + footer/filter line
     const remaining = Math.max(6, availableRows - chrome)
-    const detailContentHeight = Math.min(6, Math.max(2, Math.floor(remaining / 3)))
+    const detailContentHeight = Math.max(2, Math.floor(remaining / 2))
     const ledgerHeight = Math.max(3, remaining - detailContentHeight - 1) // -1 for the detail tab bar
     return { ledgerHeight, detailContentHeight }
   }
