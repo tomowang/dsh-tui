@@ -2,6 +2,29 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.5.0] - 2026-08-19
+
+### Bug Fixes
+
+- *(tui)* Merge each tool call/result pair into one /tools row
+- *(tui)* Give trajectory's detail pane more room, expand tool cards by default
+
+### Documentation
+
+- *(repo)* Define commit scopes and require them going forward
+
+### Features
+
+- *(tui)* Migrate rendering from Ink/React to pi-tui, add full-screen scroll
+- *(tui)* Collapse tool calls to one line, show a spinner while pending
+- *(tui)* Give /trajectory per-record-kind detail tabs, ported from the web portal
+- *(tui)* Show the approve/reject panel inline instead of full-screen
+- *(tui)* Pad main-panel messages with a 2-space left/right margin
+
+### Refactor
+
+- *(tui)* Swap transcript's PreStyledText for pi-tui's cached Text
+
 ## [0.4.0] - 2026-08-17
 
 ### Bug Fixes
