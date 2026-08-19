@@ -16,9 +16,9 @@
  *   active and takes focus while one is, rather than covering the screen.
  * - The transcript is append-only: `appendNewTranscriptItems` diffs the
  *   store's `events`/`shellHistory` arrays against how much has already been
- *   turned into a `PreStyledText` child of `documentContainer`, appending
- *   only the new tail. Re-formatting the whole transcript on every store
- *   change would be wasteful for a long session — `ScrollView`'s own
+ *   turned into a `createTranscriptLine` child of `documentContainer`,
+ *   appending only the new tail. Re-formatting the whole transcript on every
+ *   store change would be wasteful for a long session — `ScrollView`'s own
  *   viewport culling (confirmed in pi-tui's own test suite: painting a huge
  *   scroll child is O(viewport), not O(content)) is what makes this safe to
  *   grow without bound.
@@ -49,7 +49,7 @@ import { formatEvent, formatPendingToolCalls, formatShellRun, formatShellRunLive
 import { buildBannerText } from './bannerText.js'
 import { buildContextLine, buildStatsLine } from './statsFormat.js'
 import { buildPermissionText, buildQueuedText, buildStatusBarText } from './liveText.js'
-import { DynamicText, padTranscriptText, PreStyledText } from './text.js'
+import { createTranscriptLine, DynamicText, padTranscriptText } from './text.js'
 import { CustomEditor } from './CustomEditor.js'
 import { Spinner } from './Spinner.js'
 import type { TuiActions } from './actions.js'
@@ -335,14 +335,14 @@ class TuiApp implements TuiHandle {
       for (let i = this.appendedEventsCount; i < state.events.length; i++) {
         const event = state.events[i]
         const formatted = formatEvent(event, { replay: event.seq <= state.replayThrough, getTool, getToolCall })
-        if (formatted !== undefined && formatted !== '') this.documentContainer.addChild(new PreStyledText(formatted))
+        if (formatted !== undefined && formatted !== '') this.documentContainer.addChild(createTranscriptLine(formatted))
       }
       this.appendedEventsCount = state.events.length
     }
     if (state.shellHistory.length > this.appendedShellCount) {
       for (let i = this.appendedShellCount; i < state.shellHistory.length; i++) {
         const run = state.shellHistory[i]
-        this.documentContainer.addChild(new PreStyledText(formatShellRun(run.command, run.output, run.exitCode)))
+        this.documentContainer.addChild(createTranscriptLine(formatShellRun(run.command, run.output, run.exitCode)))
       }
       this.appendedShellCount = state.shellHistory.length
     }
