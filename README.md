@@ -14,6 +14,7 @@ An open-source terminal front door for [DeepSeek Harness](https://github.com/dee
 ## How it works
 
 - The TUI renders **only from the durable session log**: it replays `agent.session.events` on startup and follows `session/event` live, so `--resume` shows the exact history the log carries — the harness's "model-visible ⟺ logged" invariant does the heavy lifting.
+- The interface runs full-screen in the terminal's alternate screen buffer, with an application-owned transcript viewport (scroll with the mouse wheel/trackpad, `PageUp`/`PageDown`) that auto-follows new output until you scroll up.
 - Line input maps to the agent inbox: `agent.followup()` while idle, `agent.steer()` while a turn is running, `Ctrl+C` cancels the running turn.
 - `tui-startup` parses this app's flags (everything after the launcher's own) through `dsh-cmdline` and publishes them as an ordinary Cordis service; the runner row reads them via the bundle patch, mirroring `dsh-headless`.
 - Both stdin and stdout must be real TTYs; the plugin fails loud instead of degrading, so pipes keep using `dsh --profile headless`.
@@ -35,6 +36,7 @@ An open-source terminal front door for [DeepSeek Harness](https://github.com/dee
 - **Readline-style input** — word/line motion, kill/yank-style deletes, multi-line drafts, and shell-like double-press `Ctrl+C`/`Ctrl+D` to exit.
 - **Shell mode** — a leading `!` on an empty prompt (Claude Code's convention) switches Enter to run the line as a local shell command instead of sending it to the agent; the prompt border turns yellow for the duration, and output streams into the transcript without touching the session log.
 - **`@`-file-mention autocomplete** — typing `@` opens a fuzzy-filtered dropdown of repo files (`git ls-files`, or a bounded walk outside a git repo); `Tab`/`Enter` inserts the picked path at the cursor.
+- **Full-screen scrollable transcript** — the interface owns the terminal's alternate screen buffer rather than growing native scrollback, with mouse wheel/trackpad and `PageUp`/`PageDown` scrolling and an auto-follow-the-bottom transcript; the last screenful is flattened back into your terminal's normal scrollback on exit. `/trajectory` remains the tool for browsing further back than the viewport shows.
 - Every overlay degrades to a plain notice instead of failing the whole TUI when its backing service isn't mounted in a given profile.
 
 ## Install
@@ -80,6 +82,7 @@ Any row `--dump-config` prints — the model adapter, tool set, sandbox policy, 
 
 | Key | Effect |
 |---|---|
+| mouse wheel/trackpad, `PageUp`/`PageDown` | scroll the transcript; auto-follows new output again once you're back at the bottom |
 | `Ctrl+C` | cancel a running turn; on an idle empty line, press twice within 2s to exit |
 | `Ctrl+D` | forward-delete; on an idle empty line, press twice within 2s to exit |
 | `Shift+Tab` | cycle the permission preset (`read-only` / `workspace-write` / `danger-full-access` / `custom`) |

@@ -8,7 +8,7 @@
 
 import { truncate } from '../render.js'
 import { LOGO_HALF_BLOCK } from './logoArt.generated.js'
-import { theme } from './theme.js'
+import { theme, fg } from './theme.js'
 
 export interface BannerContent {
   readonly version: string
@@ -19,15 +19,6 @@ export interface BannerContent {
 
 const ESC = '\x1b['
 const bold = (s: string): string => `${ESC}1m${s}${ESC}0m`
-
-/** A 24-bit-color wrapper for one theme hex token — mirrors `render.ts`'s `fg()` so this file stays dependency-free. */
-function fg(hex: string): (s: string) => string {
-  const n = Number.parseInt(hex.slice(1), 16)
-  const r = (n >> 16) & 0xff
-  const g = (n >> 8) & 0xff
-  const b = n & 0xff
-  return (s: string) => `${ESC}38;2;${r};${g};${b}m${s}${ESC}0m`
-}
 
 const dim = fg(theme.muted)
 const primary = fg(theme.primary)

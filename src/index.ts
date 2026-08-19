@@ -50,15 +50,14 @@ import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import type {} from '@deepseek-ai/dsh-session-projection'
 import type {} from '@deepseek-ai/dsh-session-stats'
 import type {} from '@deepseek-ai/dsh-token-meter'
-import type { Instance } from 'ink'
 
 import { ensureSessionIdPrefix, stripSessionIdPrefix } from './sessionId.js'
 import { SLASH_COMMANDS, SLASH_COMMAND_WIDTH } from './tui/commands.js'
 import { TuiStore } from './tui/store.js'
 import type { ModelProfileOverlayState, PermissionState, PresetState, StatsSnapshot } from './tui/store.js'
-import { mountTui } from './tui/mount.js'
+import { mountTui, restoreActiveTerminal, type TuiHandle } from './tui/TuiApp.js'
 import { loadFileIndex } from './tui/fileIndex.js'
-import type { TuiActions } from './tui/App.js'
+import type { TuiActions } from './tui/actions.js'
 import { readPackageVersion } from './version.js'
 import type { ProviderDraft, ProviderRow, StoredProviderProfile } from './tui/modelProfile/types.js'
 import type { PluginRow } from './tui/plugins/types.js'
@@ -179,37 +178,10 @@ export const internals: { stdout: NodeJS.WriteStream } = {
 }
 
 /** Report an unexpected front-door failure and request a failing exit. */
-function fail(io: TuiIo, error: unknown, instance: Instance | undefined): void {
+function fail(io: TuiIo, error: unknown, instance: TuiHandle | undefined): void {
   instance?.unmount()
   io.write(`dsh-tui: ${error instanceof Error ? error.message : String(error)}\n`)
   io.exit(1)
-}
-
-/**
- * Synchronous, best-effort terminal restoration for a crash exit. Raw mode
- * and cursor visibility are otherwise only unset by `PromptInput`'s
- * `useInput` cleanup, which React defers to a microtask — fine on the
- * graceful `shutdown()`/`clearSession()` paths, which await disposal before
- * the process actually exits, but never runs from a `process.on('exit')`
- * handler, which gets no further event-loop turn. Ink's own `signal-exit`
- * hook (which calls this same `unmount()`) hits exactly that gap on a
- * SIGTERM, a SIGINT that arrives before raw mode would otherwise suppress
- * it, or an uncaught exception, leaving the reader's shell in raw mode with
- * a hidden cursor. Registered once, directly, as the last line of defense.
- */
-function restoreTerminal(): void {
-  if (process.stdin.isTTY) {
-    try {
-      process.stdin.setRawMode(false)
-    } catch {
-      // Already restored, or the stream is gone — the process is exiting either way.
-    }
-  }
-  try {
-    internals.stdout.write('\x1b[?25h')
-  } catch {
-    // stdout may already be closed on the way out.
-  }
 }
 
 /** Replace a leading home directory with `~`, matching common shell prompts. */
@@ -224,9 +196,9 @@ function abbreviateHome(cwd: string): string {
  * @param ctx - plugin context carrying the Agent, default model, and Session services.
  * @param config - validated startup config.
  * @param io - process-facing effects.
- * @param mounted - written once Ink mounts, so a later rejection can unmount before reporting.
+ * @param mounted - written once the TUI mounts, so a later rejection can unmount before reporting.
  */
-async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?: Instance }): Promise<void> {
+async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?: TuiHandle }): Promise<void> {
   // Loader siblings mount concurrently. Await the complete application before
   // creating an Agent so its scoped tools and adapters are not half-composed.
   await ctx.get('loader')?.await()
@@ -512,7 +484,7 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
   interface CurrentSession {
     readonly agent: Agent
     readonly store: TuiStore
-    readonly instance: Instance
+    readonly instance: TuiHandle
     /** From `AgentHandle.dispose`: stops the loop and drops it from the live session store (not disk). */
     readonly disposeAgent: () => Promise<void>
     readonly unsubscribers: readonly (() => unknown)[]
@@ -1034,9 +1006,9 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
       },
     }
 
-    // Clear the screen before Ink takes over so the banner opens on a fresh page.
-    internals.stdout.write('\x1b[2J\x1b[3J\x1b[H')
-
+    // No manual clear-before-mount write here: `TuiAltScreen` clears the
+    // alternate screen itself on entry, so the banner already opens on a
+    // fresh page without racing a raw write against the TUI's own paint.
     const instance = mountTui({
       store,
       actions,
@@ -1045,8 +1017,6 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
       model: selection.model,
       version: readPackageVersion(),
       cwd: abbreviateHome(process.cwd()),
-      stdout: internals.stdout,
-      stdin: process.stdin,
       promptHistory,
       getTool,
       getToolCall: store.getToolCall,
@@ -1079,19 +1049,15 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
     await sessions.flush(old.agent.session)
     await old.disposeAgent()
     for (const off of old.unsubscribers) off()
-    old.instance.unmount()
-    // Ink's own raw-mode teardown (from the old PromptInput's `useInput` cleanup)
-    // is scheduled via a passive-effect flush and a nested microtask, not run
-    // synchronously by `unmount()` — mounting the new instance before that
-    // settles lets the old instance's deferred `stdin.setRawMode(false)` clobber
-    // the new instance's raw mode right after it enables it, so arrow keys (and
-    // all other input) stop working post-`/clear`. Waiting for exit here
-    // serializes teardown before the new instance takes over stdin.
+    // `preserveScreen: true`: a fresh `TuiAltScreen` immediately re-enters
+    // the alternate screen over the same terminal, so the old instance skips
+    // flattening its content into scrollback (that's for a real exit, below).
+    old.instance.unmount({ preserveScreen: true })
     await old.instance.waitUntilExit()
     current = await attachSession(undefined)
   }
 
-  // The Ink instance is the effect: plugin disposal must always release stdin.
+  // The TUI instance is the effect: plugin disposal must always release stdin.
   ctx.effect(() => () => current.instance.unmount())
 }
 
@@ -1118,7 +1084,7 @@ export function apply(ctx: Context, config: Config): void {
     io.exit(1)
     return
   }
-  process.once('exit', restoreTerminal)
-  const mounted: { instance?: Instance } = {}
+  process.once('exit', restoreActiveTerminal)
+  const mounted: { instance?: TuiHandle } = {}
   void run(ctx, config, io, mounted).catch((error: unknown) => { fail(io, error, mounted.instance) })
 }

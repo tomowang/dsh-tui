@@ -5,7 +5,7 @@
  * @module @tomowang/dsh-tui/tui/commands
  */
 
-import type { TuiActions } from './PromptInput.js'
+import type { TuiActions } from './actions.js'
 
 export interface SlashCommand {
   readonly command: string

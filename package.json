@@ -65,11 +65,9 @@
   "dependencies": {
     "@deepseek-ai/dsh-cmdline": "^0.1.0-rc.6",
     "@deepseek-ai/schemastery": "^3.18.1",
+    "@earendil-works/pi-tui": "^0.84.2",
     "commander": "^15.0.0",
-    "diff": "^9.0.0",
-    "ink": "^7.1.1",
-    "ink-text-input": "^6.0.0",
-    "react": "^19.2.8"
+    "diff": "^9.0.0"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
@@ -94,9 +92,7 @@
     "@deepseek-ai/dsh-user-questions": "^0.1.0-rc.6",
     "@eslint/js": "^10.0.1",
     "@types/node": "^24.0.0",
-    "@types/react": "^19.2.18",
     "eslint": "^10.8.1",
-    "eslint-plugin-react-hooks": "^7.1.1",
     "git-cliff": "^2.13.1",
     "globals": "^17.11.0",
     "husky": "^9.1.7",

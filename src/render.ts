@@ -10,7 +10,7 @@ import type { CallId, ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { FileDiff, ToolCallView, ToolDefinition, ToolResult, ToolResultView } from '@deepseek-ai/dsh-tools'
 import { renderMarkdown } from './markdown.js'
-import { theme } from './tui/theme.js'
+import { theme, fg } from './tui/theme.js'
 
 /** Rendering context: replay walks history already in the log. */
 export interface RenderOptions {
@@ -20,22 +20,6 @@ export interface RenderOptions {
   getTool?: (name: string) => ToolDefinition | undefined
   /** Look up a `tool/call`'s name/arguments by `callId`, for a later `tool/result` to present with. */
   getToolCall?: (callId: CallId) => { name: string; arguments: string } | undefined
-}
-
-const ESC = '\x1b['
-
-/**
- * A 24-bit-color wrapper for one theme hex token, e.g. `fg(theme.error)('✖')`.
- * Used instead of basic-16 ANSI codes (SGR 30-37) or SGR 2 "faint" so
- * scrollback output matches the live Ink UI's palette exactly, rather than
- * depending on how a given terminal renders faint/16-color text.
- */
-function fg(hex: string): (s: string) => string {
-  const n = Number.parseInt(hex.slice(1), 16)
-  const r = (n >> 16) & 0xff
-  const g = (n >> 8) & 0xff
-  const b = n & 0xff
-  return (s: string) => `${ESC}38;2;${r};${g};${b}m${s}${ESC}0m`
 }
 
 const dim = fg(theme.muted)
