@@ -101,6 +101,13 @@ export interface StreamingState {
   readonly reasoningText: string
 }
 
+/** One tool call sent but with no `tool/result` yet, for the live region's spinner row; collapses into the transcript's one-line summary once its result lands. */
+export interface PendingToolCall {
+  readonly callId: CallId
+  readonly name: string
+  readonly arguments: string
+}
+
 /** The in-flight local shell-escape run (`!` prompt-mode), mirroring `StreamingState`'s live-region role. */
 export interface ShellRunState {
   readonly id: number
@@ -140,6 +147,8 @@ export interface TuiState {
   readonly preset: PresetState | undefined
   /** The in-flight step's accumulated text, or `undefined` when nothing is currently streaming. */
   readonly streaming: StreamingState | undefined
+  /** Tool calls sent but not yet resolved by a `tool/result`, in call order. */
+  readonly pendingToolCalls: readonly PendingToolCall[]
   /** The in-flight local shell-escape run, or `undefined` when none is running. */
   readonly shellRun: ShellRunState | undefined
   /** Settled local shell-escape runs, in completion order, interleaved into the transcript via `afterSeq`. */
@@ -173,12 +182,22 @@ export class TuiStore {
   // of its own (only `message.source.callId`), so a later `presentResult` needs
   // this O(1) lookup back to its `tool/call` rather than an O(n) history scan.
   private readonly toolCalls = new Map<CallId, { name: string; arguments: string }>()
+  // Backing map for `pendingToolCalls`: insertion-ordered so its `.values()`
+  // snapshot lists calls in the order they were sent, same as `toolCalls`
+  // above but pruned as each call's result lands.
+  private readonly pendingToolCallsMap = new Map<CallId, { name: string; arguments: string }>()
 
   constructor(initial: { events: readonly SessionEvent[] }) {
     const lastSeq = initial.events.at(-1)?.seq ?? 0
     this.lastSeq = lastSeq
     for (const event of initial.events) {
-      if (event.type === 'tool/call') this.toolCalls.set(event.data.callId, { name: event.data.name, arguments: event.data.arguments })
+      if (event.type === 'tool/call') {
+        const call = { name: event.data.name, arguments: event.data.arguments }
+        this.toolCalls.set(event.data.callId, call)
+        this.pendingToolCallsMap.set(event.data.callId, call)
+      } else if (event.type === 'tool/result') {
+        this.pendingToolCallsMap.delete(event.data.message.source.callId)
+      }
     }
     this.state = {
       // `assistant/chunk` rows from a prior session are never folded into
@@ -195,6 +214,7 @@ export class TuiStore {
       stats: EMPTY_STATS,
       preset: undefined,
       streaming: undefined,
+      pendingToolCalls: this.pendingToolCallsSnapshot(),
       shellRun: undefined,
       shellHistory: [],
       fileIndex: EMPTY_FILE_INDEX,
@@ -216,7 +236,16 @@ export class TuiStore {
     if (event.seq <= this.lastSeq) return
     this.lastSeq = event.seq
     if (event.type === 'tool/call') {
-      this.toolCalls.set(event.data.callId, { name: event.data.name, arguments: event.data.arguments })
+      const call = { name: event.data.name, arguments: event.data.arguments }
+      this.toolCalls.set(event.data.callId, call)
+      this.pendingToolCallsMap.set(event.data.callId, call)
+      this.set({ events: [...this.state.events, event], pendingToolCalls: this.pendingToolCallsSnapshot() })
+      return
+    }
+    if (event.type === 'tool/result') {
+      this.pendingToolCallsMap.delete(event.data.message.source.callId)
+      this.set({ events: [...this.state.events, event], pendingToolCalls: this.pendingToolCallsSnapshot() })
+      return
     }
     if (event.type === 'assistant/chunk') {
       this.foldChunk(event.data)
@@ -229,6 +258,11 @@ export class TuiStore {
       return
     }
     this.set({ events: [...this.state.events, event] })
+  }
+
+  /** Snapshot `pendingToolCallsMap` into `TuiState`'s array shape, in call order. */
+  private pendingToolCallsSnapshot(): PendingToolCall[] {
+    return [...this.pendingToolCallsMap.entries()].map(([callId, call]) => ({ callId, ...call }))
   }
 
   /** Fold one raw stream chunk into the in-flight step's live text, keyed by `{turn, step}`. */

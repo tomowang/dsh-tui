@@ -24,6 +24,15 @@ function toolCallEvent(seq: number, callId: string, name: string, args: string):
   return { type: 'tool/call', seq, time: 0, data: { turn: 1, step: 1, callId, name, arguments: args } } as unknown as SessionEvent
 }
 
+function toolResultEvent(seq: number, callId: string): SessionEvent {
+  return {
+    type: 'tool/result',
+    seq,
+    time: 0,
+    data: { message: { source: { kind: 'tool', callId }, content: [{ type: 'tool-result', content: [], isError: false }] } },
+  } as unknown as SessionEvent
+}
+
 describe('TuiStore construction', () => {
   it('seeds replayThrough from the last seeded event', () => {
     const store = new TuiStore({ events: [event(1), event(2), event(5)] })
@@ -137,6 +146,36 @@ describe('TuiStore.getToolCall', () => {
   it('returns undefined for an unknown callId', () => {
     const store = new TuiStore({ events: [] })
     expect(store.getToolCall(CallId('missing'))).toBeUndefined()
+  })
+})
+
+describe('TuiStore pending tool calls', () => {
+  it('lists a call sent live with no result yet', () => {
+    const store = new TuiStore({ events: [] })
+    store.appendEvent(toolCallEvent(1, 'call-1', 'bash', '{"command":"ls"}'))
+    expect(store.getSnapshot().pendingToolCalls).toEqual([{ callId: 'call-1', name: 'bash', arguments: '{"command":"ls"}' }])
+  })
+
+  it('removes a call once its result lands', () => {
+    const store = new TuiStore({ events: [] })
+    store.appendEvent(toolCallEvent(1, 'call-1', 'bash', '{"command":"ls"}'))
+    store.appendEvent(toolResultEvent(2, 'call-1'))
+    expect(store.getSnapshot().pendingToolCalls).toEqual([])
+  })
+
+  it('keeps concurrent calls in send order, dropping only the one that resolves', () => {
+    const store = new TuiStore({ events: [] })
+    store.appendEvent(toolCallEvent(1, 'call-1', 'bash', '{"command":"ls"}'))
+    store.appendEvent(toolCallEvent(2, 'call-2', 'read_file', '{"path":"a.txt"}'))
+    store.appendEvent(toolResultEvent(3, 'call-1'))
+    expect(store.getSnapshot().pendingToolCalls).toEqual([{ callId: 'call-2', name: 'read_file', arguments: '{"path":"a.txt"}' }])
+  })
+
+  it('seeds pendingToolCalls from replay, reflecting only calls left unresolved by the log so far', () => {
+    const store = new TuiStore({
+      events: [toolCallEvent(1, 'call-1', 'bash', '{}'), toolResultEvent(2, 'call-1'), toolCallEvent(3, 'call-2', 'read_file', '{}')],
+    })
+    expect(store.getSnapshot().pendingToolCalls).toEqual([{ callId: 'call-2', name: 'read_file', arguments: '{}' }])
   })
 })
 

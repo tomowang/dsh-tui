@@ -29,7 +29,7 @@ const green = fg(theme.success)
 const yellow = fg(theme.warning)
 const violet = fg(theme.reasoning)
 
-/** Line cap for a presented tool card's body in the permanent transcript; `<Static>` prints can't be redrawn, so a long card is summarized there — full detail is available via `formatToolCardDetail`, scrolled in the Tool Cards overlay. */
+/** Line cap for a settled shell-escape (`!`) run's body in the permanent transcript; `<Static>` prints can't be redrawn, so a long run is summarized there — tool calls/results don't use this cap, since the transcript only ever shows their one-line collapsed summary (see `formatToolCardSummary`), with full detail available via `formatToolCardDetail` in the Tool Cards overlay. */
 const MAX_CARD_LINES = 20
 /** `diff` package's `maxEditLength`: bounds worst-case diff cost on a huge file, mirroring the removed first-party TUI's default. */
 const MAX_DIFF_EDIT_LENGTH = 1000
@@ -190,12 +190,26 @@ function formatCallLines(view: ToolCallView): string[] {
   return [header, ...rawInput]
 }
 
-/** Format a `tool/call` event, presenting through the tool's `presentCall` when available. */
-function formatToolCall(name: string, rawArgs: string, getTool: RenderOptions['getTool']): string {
+/** A pending call's one-line title, presenting through the tool's `presentCall` when available — shared by the live region's spinner row. */
+function pendingCallTitle(name: string, rawArgs: string, getTool: RenderOptions['getTool']): string {
   const view = presentCallSafely(name, rawArgs, getTool)
-  if (view === undefined) return fallbackCallLine(name, rawArgs)
-  const lines = capLines(formatCallLines(view), MAX_CARD_LINES)
-  return lines.length <= 1 ? lines[0] : `\n${lines.join('\n')}\n`
+  return view === undefined ? `${name} ${truncate(rawArgs, 100)}` : view.title
+}
+
+/**
+ * Format every tool call that's been sent but has no `tool/result` yet, for
+ * the live region: one line per call, the shared spinner frame standing in
+ * for the settled ✓/✖ icon it'll collapse to once its result lands and it
+ * becomes a single transcript line (see `formatToolCardSummary`).
+ */
+export function formatPendingToolCalls(
+  calls: readonly { name: string; arguments: string }[],
+  spinnerChar: string,
+  getTool: RenderOptions['getTool'],
+): string {
+  if (calls.length === 0) return ''
+  const lines = calls.map(call => `${cyan(spinnerChar)} ${pendingCallTitle(call.name, call.arguments, getTool)}`)
+  return `\n${lines.join('\n')}\n`
 }
 
 /** Resolve a `tool/result`'s presented view, or `undefined` for any condition that keeps the flat fallback. */
@@ -330,18 +344,19 @@ export function formatEvent(event: SessionEvent, options: RenderOptions): string
       return formatStreamingText(textOf(content), reasoningOf(content))
     }
     case 'tool/call': {
-      return formatToolCall(event.data.name, event.data.arguments, options.getTool)
+      // Never gets its own transcript line: while pending it shows as a
+      // spinner row in the live region (see `formatPendingToolCalls`), and
+      // once its `tool/result` lands, that event contributes the one
+      // collapsed transcript line for the pair (see below). Full detail for
+      // either half is still available via `formatToolCardDetail` in the
+      // Tool Cards overlay (Ctrl+O / `/tools`).
+      return undefined
     }
     case 'tool/result': {
-      const resolved = resolveToolResult(event, options)
-      if (resolved.kind === 'error') return resolved.line
-      const { icon, content, presented } = resolved
-      if (presented === undefined) {
-        const text = truncate(textOf(content), 100)
-        return text === '' ? icon : `${icon} ${dim(text)}`
-      }
-      const lines = capLines(formatResultLines(presented.name, icon, content, presented.view), MAX_CARD_LINES)
-      return lines.length <= 1 ? lines[0] : `\n${lines.join('\n')}\n`
+      // Collapsed to the same one-line summary as the Tool Cards overlay's
+      // row — the transcript reads as a log, not a set of inline panels; see
+      // `formatToolCardSummary`/`formatToolCardDetail` for the expanded view.
+      return formatToolCardSummary(event, options)
     }
     case 'turn/end': {
       const reason = event.data.reason

@@ -41,7 +41,7 @@ import {
   type OverlayHandle,
 } from '@earendil-works/pi-tui'
 import type { RenderOptions } from '../render.js'
-import { formatEvent, formatShellRun, formatShellRunLive, formatStreamingText } from '../render.js'
+import { formatEvent, formatPendingToolCalls, formatShellRun, formatShellRunLive, formatStreamingText } from '../render.js'
 import { buildBannerText } from './bannerText.js'
 import { buildContextLine, buildStatsLine } from './statsFormat.js'
 import { buildPermissionText, buildQueuedText, buildStatusBarText } from './liveText.js'
@@ -219,6 +219,10 @@ class TuiApp implements TuiHandle {
       if (streaming === undefined) return ''
       return formatStreamingText(streaming.text, streaming.reasoningText) ?? ''
     })
+    const pendingToolCallsText = new DynamicText(() => {
+      const { pendingToolCalls } = store.getSnapshot()
+      return formatPendingToolCalls(pendingToolCalls, this.spinner.current(), options.getTool)
+    })
     const shellRunLiveText = new DynamicText(() => {
       const run = store.getSnapshot().shellRun
       return run === undefined ? '' : formatShellRunLive(run.command, run.output)
@@ -245,7 +249,7 @@ class TuiApp implements TuiHandle {
     })
 
     const dock = new VStack(
-      [noticeText, queuedText, streamingText, shellRunLiveText, statusBarText, this.editor, permissionText, statsLineText],
+      [noticeText, queuedText, streamingText, pendingToolCallsText, shellRunLiveText, statusBarText, this.editor, permissionText, statsLineText],
       { gap: 0 },
     )
     const layoutRoot = new VStack(

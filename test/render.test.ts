@@ -3,6 +3,7 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { ToolCallView, ToolDefinition, ToolResultView } from '@deepseek-ai/dsh-tools'
 import {
   formatEvent,
+  formatPendingToolCalls,
   formatShellRun,
   formatShellRunLive,
   formatStreamingText,
@@ -175,32 +176,52 @@ describe('formatStreamingText', () => {
 })
 
 describe('formatEvent — tool/call', () => {
-  it('includes the tool name and truncated arguments when no getTool is supplied', () => {
+  it('never renders its own transcript line — a pending call lives in the live region, and settles into the transcript via its tool/result', () => {
+    const view: ToolCallView = { card: 'generic', title: 'Read src/foo.ts', kind: 'read' }
+    const tool = fakeTool({ presentCall: () => view })
+    const line = formatEvent(
+      event('tool/call', { name: 'read_file', arguments: '{"path":"src/foo.ts"}' }),
+      { replay: false, getTool: toolResolver('read_file', tool) },
+    )
+    expect(line).toBeUndefined()
+  })
+
+  it('is undefined with no getTool supplied too', () => {
     const line = formatEvent(
       event('tool/call', { name: 'read_file', arguments: '{"path":"/tmp/foo.txt"}' }),
       { replay: false },
     )
-    expect(line).toContain('read_file')
-    expect(line).toContain('/tmp/foo.txt')
+    expect(line).toBeUndefined()
+  })
+})
+
+describe('formatPendingToolCalls', () => {
+  it('renders nothing for an empty list', () => {
+    expect(formatPendingToolCalls([], '⠋', undefined)).toBe('')
+  })
+
+  it('includes the tool name and truncated arguments when no getTool is supplied', () => {
+    const text = formatPendingToolCalls([{ name: 'read_file', arguments: '{"path":"/tmp/foo.txt"}' }], '⠋', undefined)
+    expect(text).toContain('read_file')
+    expect(text).toContain('/tmp/foo.txt')
+    expect(text).toContain('⠋')
   })
 
   it('falls back to the flat line when the tool has no presentCall', () => {
-    const line = formatEvent(
-      event('tool/call', { name: 'read_file', arguments: '{"path":"/tmp/foo.txt"}' }),
-      { replay: false, getTool: toolResolver('read_file', fakeTool({})) },
+    const text = formatPendingToolCalls(
+      [{ name: 'read_file', arguments: '{"path":"/tmp/foo.txt"}' }],
+      '⠋',
+      toolResolver('read_file', fakeTool({})),
     )
-    expect(line).toContain('read_file')
-    expect(line).toContain('/tmp/foo.txt')
+    expect(text).toContain('read_file')
+    expect(text).toContain('/tmp/foo.txt')
   })
 
   it('falls back to the flat line when presentCall returns undefined', () => {
     const tool = fakeTool({ presentCall: () => undefined })
-    const line = formatEvent(
-      event('tool/call', { name: 'read_file', arguments: '{"path":"/tmp/foo.txt"}' }),
-      { replay: false, getTool: toolResolver('read_file', tool) },
-    )
-    expect(line).toContain('read_file')
-    expect(line).toContain('/tmp/foo.txt')
+    const text = formatPendingToolCalls([{ name: 'read_file', arguments: '{"path":"/tmp/foo.txt"}' }], '⠋', toolResolver('read_file', tool))
+    expect(text).toContain('read_file')
+    expect(text).toContain('/tmp/foo.txt')
   })
 
   it('falls back to the flat line when presentCall throws', () => {
@@ -209,73 +230,42 @@ describe('formatEvent — tool/call', () => {
         throw new Error('boom')
       },
     })
-    const line = formatEvent(
-      event('tool/call', { name: 'read_file', arguments: '{"path":"/tmp/foo.txt"}' }),
-      { replay: false, getTool: toolResolver('read_file', tool) },
-    )
-    expect(line).toContain('read_file')
-    expect(line).toContain('/tmp/foo.txt')
+    const text = formatPendingToolCalls([{ name: 'read_file', arguments: '{"path":"/tmp/foo.txt"}' }], '⠋', toolResolver('read_file', tool))
+    expect(text).toContain('read_file')
+    expect(text).toContain('/tmp/foo.txt')
   })
 
   it('falls back to the flat line when the arguments are not valid JSON', () => {
     const tool = fakeTool({ presentCall: () => ({ card: 'generic', title: 'should not be reached' }) })
-    const line = formatEvent(
-      event('tool/call', { name: 'read_file', arguments: 'not json' }),
-      { replay: false, getTool: toolResolver('read_file', tool) },
-    )
-    expect(line).toContain('read_file')
-    expect(line).not.toContain('should not be reached')
+    const text = formatPendingToolCalls([{ name: 'read_file', arguments: 'not json' }], '⠋', toolResolver('read_file', tool))
+    expect(text).toContain('read_file')
+    expect(text).not.toContain('should not be reached')
   })
 
-  it('renders a generic card as a single line when there is no rawInput', () => {
+  it('uses the presented title in place of the raw name/arguments', () => {
     const view: ToolCallView = { card: 'generic', title: 'Read src/foo.ts', kind: 'read' }
     const tool = fakeTool({ presentCall: () => view })
-    const line = formatEvent(
-      event('tool/call', { name: 'read_file', arguments: '{"path":"src/foo.ts"}' }),
-      { replay: false, getTool: toolResolver('read_file', tool) },
-    )
-    expect(line).toContain('Read src/foo.ts')
-    expect(line?.includes('\n')).toBe(false)
+    const text = formatPendingToolCalls([{ name: 'read_file', arguments: '{"path":"src/foo.ts"}' }], '⠋', toolResolver('read_file', tool))
+    expect(text).toContain('Read src/foo.ts')
   })
 
-  it('renders a generic card with rawInput on a following line', () => {
-    const view: ToolCallView = { card: 'generic', title: 'Run background job', rawInput: 'job-42' }
-    const tool = fakeTool({ presentCall: () => view })
-    const line = formatEvent(
-      event('tool/call', { name: 'run_job', arguments: '{}' }),
-      { replay: false, getTool: toolResolver('run_job', tool) },
+  it('renders one line per concurrent pending call, in order', () => {
+    const readView: ToolCallView = { card: 'generic', title: 'Read a.ts', kind: 'read' }
+    const bashView: ToolCallView = { card: 'terminal', title: 'ls -la' }
+    const getTool: RenderOptions['getTool'] = name =>
+      name === 'read_file' ? fakeTool({ presentCall: () => readView }) : fakeTool({ presentCall: () => bashView })
+    const text = formatPendingToolCalls(
+      [
+        { name: 'read_file', arguments: '{}' },
+        { name: 'bash', arguments: '{}' },
+      ],
+      '⠋',
+      getTool,
     )
-    expect(line).toContain('Run background job')
-    expect(line).toContain('job-42')
-  })
-
-  it('renders a terminal card with its command, description, and cwd', () => {
-    const view: ToolCallView = { card: 'terminal', title: 'ls -la', description: 'List files', cwd: '/home/user' }
-    const tool = fakeTool({ presentCall: () => view })
-    const line = formatEvent(
-      event('tool/call', { name: 'bash', arguments: '{"command":"ls -la"}' }),
-      { replay: false, getTool: toolResolver('bash', tool) },
-    )
-    expect(line).toContain('List files')
-    expect(line).toContain('ls -la')
-    expect(line).toContain('/home/user')
-  })
-
-  it('renders a diff card with +/- lines for a new file', () => {
-    const view: ToolCallView = {
-      card: 'diff',
-      title: 'Write foo.txt',
-      diffs: [{ path: 'foo.txt', oldText: null, newText: 'line one\nline two' }],
-    }
-    const tool = fakeTool({ presentCall: () => view })
-    const line = formatEvent(
-      event('tool/call', { name: 'write', arguments: '{"path":"foo.txt","content":"line one\\nline two"}' }),
-      { replay: false, getTool: toolResolver('write', tool) },
-    )
-    expect(line).toContain('Write foo.txt')
-    expect(line).toContain('foo.txt')
-    expect(line).toContain('+ line one')
-    expect(line).toContain('+ line two')
+    const lines = text.split('\n').filter(l => l !== '')
+    expect(lines).toHaveLength(2)
+    expect(lines[0]).toContain('Read a.ts')
+    expect(lines[1]).toContain('ls -la')
   })
 })
 
@@ -423,7 +413,7 @@ describe('formatEvent — tool/result', () => {
     expect(line).not.toContain('should not be reached')
   })
 
-  it('renders a generic card with a replacement title and reformatted content', () => {
+  it('collapses a generic card to its presented title, dropping the reformatted body', () => {
     const view: ToolResultView = { card: 'generic', title: 'Read src/foo.ts', content: [{ type: 'text', text: '1: hello' }] }
     const tool = fakeTool({ presentResult: () => view })
     const line = formatEvent(
@@ -435,11 +425,12 @@ describe('formatEvent — tool/result', () => {
       },
     )
     expect(line).toContain('Read src/foo.ts')
-    expect(line).toContain('1: hello')
+    expect(line).not.toContain('1: hello')
     expect(line).not.toContain('raw')
+    expect(line?.includes('\n')).toBe(false)
   })
 
-  it('renders a terminal card with output and exit code', () => {
+  it('collapses a terminal card to a single line, dropping output/exit-code detail', () => {
     const view: ToolResultView = { card: 'terminal', output: 'total 0\ndrwx------', exitCode: 0 }
     const tool = fakeTool({ presentResult: () => view })
     const line = formatEvent(
@@ -450,12 +441,14 @@ describe('formatEvent — tool/result', () => {
         getToolCall: callResolver('call-1', { name: 'bash', arguments: '{"command":"ls -la"}' }),
       },
     )
-    expect(line).toContain('total 0')
-    expect(line).toContain('drwx------')
-    expect(line).toContain('[exit 0]')
+    expect(line).toContain('bash')
+    expect(line).not.toContain('total 0')
+    expect(line).not.toContain('drwx------')
+    expect(line).not.toContain('[exit 0]')
+    expect(line?.includes('\n')).toBe(false)
   })
 
-  it('caps the transcript body at MAX_CARD_LINES and marks what was omitted', () => {
+  it('collapses to a single line no matter how large the underlying card body is', () => {
     const output = Array.from({ length: 24 }, (_, index) => `line ${index + 1}`).join('\n')
     const tool = fakeTool({ presentResult: () => ({ card: 'terminal', output }) })
     const line = formatEvent(resultEvent('call-1', [{ type: 'text', text: 'raw' }], false), {
@@ -463,11 +456,11 @@ describe('formatEvent — tool/result', () => {
       getTool: toolResolver('bash', tool),
       getToolCall: callResolver('call-1', { name: 'bash', arguments: '{}' }),
     })
-    expect(line).toContain('omitted')
     expect(line).not.toContain('line 24')
+    expect(line?.includes('\n')).toBe(false)
   })
 
-  it('renders a diff card from the completed FileDiffs', () => {
+  it('collapses a diff card to its title, dropping the +/- lines', () => {
     const view: ToolResultView = {
       card: 'diff',
       title: 'Write foo.txt',
@@ -483,11 +476,11 @@ describe('formatEvent — tool/result', () => {
       },
     )
     expect(line).toContain('Write foo.txt')
-    expect(line).toContain('- old')
-    expect(line).toContain('+ new')
+    expect(line).not.toContain('- old')
+    expect(line).not.toContain('+ new')
   })
 
-  it('renders a search card grouped by file, with a truncated footer', () => {
+  it('collapses a search card to its title, dropping the per-file matches', () => {
     const view: ToolResultView = {
       card: 'search',
       shape: 'matches',
@@ -504,12 +497,12 @@ describe('formatEvent — tool/result', () => {
         getToolCall: callResolver('call-1', { name: 'grep', arguments: '{}' }),
       },
     )
-    expect(line).toContain('src/a.ts')
-    expect(line).toContain('3: const x = 1')
-    expect(line).toContain('1 of 50')
+    expect(line).toContain('grep')
+    expect(line).not.toContain('const x = 1')
+    expect(line).not.toContain('1 of 50')
   })
 
-  it('renders a read card as numbered lines with a window summary', () => {
+  it('collapses a read card to a single line, falling back to the tool name when the view sets no title', () => {
     const view: ToolResultView = {
       card: 'read',
       path: 'src/a.ts',
@@ -526,12 +519,12 @@ describe('formatEvent — tool/result', () => {
         getToolCall: callResolver('call-1', { name: 'read_file', arguments: '{}' }),
       },
     )
-    expect(line).toContain('src/a.ts')
-    expect(line).toContain('1: const x = 1')
-    expect(line).toContain('1-1 of 200')
+    expect(line).toContain('read_file')
+    expect(line).not.toContain('const x = 1')
+    expect(line?.includes('\n')).toBe(false)
   })
 
-  it('renders a web search card with citations', () => {
+  it('collapses a web search card to its title, dropping the citation list', () => {
     const view: ToolResultView = {
       card: 'web',
       kind: 'search',
@@ -547,8 +540,9 @@ describe('formatEvent — tool/result', () => {
         getToolCall: callResolver('call-1', { name: 'web_search', arguments: '{}' }),
       },
     )
-    expect(line).toContain('Example')
-    expect(line).toContain('https://example.com')
+    expect(line).toContain('web_search')
+    expect(line).not.toContain('Example')
+    expect(line).not.toContain('https://example.com')
   })
 })
 

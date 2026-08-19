@@ -26,7 +26,8 @@ An open-source terminal front door for [DeepSeek Harness](https://github.com/dee
 - **`/model` provider management** — switch the active model, and add, edit, or delete custom LLM providers (route, base URL, API key, model discovery) without leaving the terminal.
 - **Agent presets** — start a fresh session on a given preset with `--agent-preset`, or browse and switch presets from `/presets` (fixed once the session's first turn has run).
 - **Session inspectors** — `/trajectory` for a turn/step event ledger with a detail view and filtering, `/context` for a context-window usage breakdown, `/plugins` for the loaded Cordis plugin tree and fiber state.
-- **Tool Cards overlay** — `/tools` or `Ctrl+O` opens a scrollable browser over the session's tool calls/results, letting a card expand past the transcript's fixed line cap to its full presentation instead of showing "…omitted".
+- **Collapsed tool calls with a live spinner** — a running tool call shows as a single spinner line in the prompt area; once its result lands, it settles into one collapsed `✓`/`✖` transcript line rather than an inline multi-line card.
+- **Tool Cards overlay** — `/tools` or `Ctrl+O` opens a scrollable browser over the session's tool calls/results, letting any collapsed transcript line expand to its full presentation.
 - **Reasoning display** — a model's reasoning/thinking content renders as a distinct dim `✦ thinking` block ahead of its visible answer, both while streaming and in settled transcript output.
 - **Markdown rendering** — assistant text with an unambiguous Markdown signal (fenced code, headers, lists, blockquotes, rules, tables, links, bold/strikethrough, inline code) is styled for the terminal; plain prose passes through untouched.
 - **Permission preset cycling** — `Shift+Tab` cycles `read-only` / `workspace-write` / `danger-full-access` / `custom`, shown live in the prompt area.
@@ -71,7 +72,7 @@ Any row `--dump-config` prints — the model adapter, tool set, sandbox policy, 
 | `/model` | manage LLM provider profiles: switch model, add/edit/delete a custom provider |
 | `/presets` | view and switch agent presets (fixed once the session's first turn has run) |
 | `/trajectory` | browse the turn/step event ledger with a detail inspector and filter |
-| `/tools` | browse and expand tool cards past the transcript's line cap |
+| `/tools` | browse and expand tool cards past their collapsed transcript line |
 | `/context` | show context-window usage as a bar-chart breakdown |
 | `/plugins` | show the loaded Cordis plugin tree and fiber state |
 | `/compact` | summarize and compact session history |
