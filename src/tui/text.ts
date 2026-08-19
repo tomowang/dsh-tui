@@ -8,7 +8,18 @@
  * @module @tomowang/dsh-tui/tui/text
  */
 
-import type { Component } from '@earendil-works/pi-tui'
+import { wrapTextWithAnsi, type Component } from '@earendil-works/pi-tui'
+
+/** Left/right margin applied to main-panel message content, so it doesn't sit flush against either terminal edge. */
+const TRANSCRIPT_MARGIN = 2
+const TRANSCRIPT_INDENT = ' '.repeat(TRANSCRIPT_MARGIN)
+
+/** Word-wraps already-ANSI-styled text to fit within `width` minus the transcript's left/right margin, then indents every resulting line. Shared by `PreStyledText` (settled transcript rows) and the live-region rows (streaming text, pending tool calls, live shell output) so in-flight content lines up with what it settles into. */
+export function padTranscriptText(text: string, width: number): string[] {
+  if (text === '') return []
+  const usableWidth = Math.max(1, width - TRANSCRIPT_MARGIN * 2)
+  return wrapTextWithAnsi(text, usableWidth).map(line => `${TRANSCRIPT_INDENT}${line}`)
+}
 
 /** A static block of pre-styled text, replaceable via `setText`. Used for anything whose content changes over time (streaming text, status bar, stats line, …) but whose layout doesn't depend on the current terminal width. */
 export class PreStyledText implements Component {
@@ -27,11 +38,11 @@ export class PreStyledText implements Component {
   }
 
   invalidate(): void {
-    // No cache to invalidate — `render` re-splits `text` every call.
+    // No cache to invalidate — `render` re-wraps `text` every call.
   }
 
-  render(_width: number): string[] {
-    return this.text === '' ? [] : this.text.split('\n')
+  render(width: number): string[] {
+    return padTranscriptText(this.text, width)
   }
 }
 

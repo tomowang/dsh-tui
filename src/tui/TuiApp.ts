@@ -49,7 +49,7 @@ import { formatEvent, formatPendingToolCalls, formatShellRun, formatShellRunLive
 import { buildBannerText } from './bannerText.js'
 import { buildContextLine, buildStatsLine } from './statsFormat.js'
 import { buildPermissionText, buildQueuedText, buildStatusBarText } from './liveText.js'
-import { DynamicText, PreStyledText } from './text.js'
+import { DynamicText, padTranscriptText, PreStyledText } from './text.js'
 import { CustomEditor } from './CustomEditor.js'
 import { Spinner } from './Spinner.js'
 import type { TuiActions } from './actions.js'
@@ -247,18 +247,21 @@ class TuiApp implements TuiHandle {
       return notice === undefined ? '' : secondary(notice)
     })
     const queuedText = new DynamicText(() => buildQueuedText(store.getSnapshot().queued))
-    const streamingText = new DynamicText(() => {
+    const streamingText = new DynamicText(width => {
       const streaming = store.getSnapshot().streaming
       if (streaming === undefined) return ''
-      return formatStreamingText(streaming.text, streaming.reasoningText) ?? ''
+      const text = formatStreamingText(streaming.text, streaming.reasoningText) ?? ''
+      return padTranscriptText(text, width).join('\n')
     })
-    const pendingToolCallsText = new DynamicText(() => {
+    const pendingToolCallsText = new DynamicText(width => {
       const { pendingToolCalls } = store.getSnapshot()
-      return formatPendingToolCalls(pendingToolCalls, this.spinner.current(), options.getTool)
+      const text = formatPendingToolCalls(pendingToolCalls, this.spinner.current(), options.getTool)
+      return padTranscriptText(text, width).join('\n')
     })
-    const shellRunLiveText = new DynamicText(() => {
+    const shellRunLiveText = new DynamicText(width => {
       const run = store.getSnapshot().shellRun
-      return run === undefined ? '' : formatShellRunLive(run.command, run.output)
+      if (run === undefined) return ''
+      return padTranscriptText(formatShellRunLive(run.command, run.output), width).join('\n')
     })
     const statusBarText = new DynamicText(() => {
       const state = store.getSnapshot()
