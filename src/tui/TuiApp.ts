@@ -10,7 +10,10 @@
  *   stats line, permission indicator) is a `DynamicText`/`Spinner` per row,
  *   each pulling straight from `store.getSnapshot()` at render time. There is
  *   no manual `setText` bookkeeping to keep in sync — every repaint just
- *   reflects whatever the store currently holds.
+ *   reflects whatever the store currently holds. The approve/reject panel
+ *   (`ApprovalSlot`) is a live-region row too, but an interactive one: it
+ *   delegates render/input to whichever `ApprovalOverlay` is currently
+ *   active and takes focus while one is, rather than covering the screen.
  * - The transcript is append-only: `appendNewTranscriptItems` diffs the
  *   store's `events`/`shellHistory` arrays against how much has already been
  *   turned into a `PreStyledText` child of `documentContainer`, appending
@@ -21,8 +24,9 @@
  *   grow without bound.
  *
  * Overlays (`/model`, `/trajectory`, Ctrl+O tool cards, `/context`,
- * `/plugins`, `/presets`, approval, question) are `tui.showOverlay(...)`
- * calls keyed off `store.getSnapshot().overlay.kind` — see `updateOverlay`.
+ * `/plugins`, `/presets`, question) are `tui.showOverlay(...)` calls keyed
+ * off `store.getSnapshot().overlay.kind` — see `updateOverlay`. Approval is
+ * the one exception: it renders inline in the dock instead (see above).
  * @module @tomowang/dsh-tui/tui/TuiApp
  */
 
@@ -129,6 +133,34 @@ class FullScreenOverlay implements Component {
   }
 }
 
+/**
+ * Dock row that delegates to whichever `ApprovalOverlay` is currently
+ * active, or renders nothing between approvals. Unlike the other dock rows
+ * (`DynamicText`, pulling read-only text from the store each render), this
+ * one also takes focus and forwards keystrokes — it's how the approve/reject
+ * panel gets shown inline, in the live region, instead of as a
+ * full-screen `showOverlay` panel covering the transcript.
+ */
+class ApprovalSlot implements Component {
+  private current: ApprovalOverlay | undefined
+
+  set(component: ApprovalOverlay | undefined): void {
+    this.current = component
+  }
+
+  invalidate(): void {
+    this.current?.invalidate()
+  }
+
+  render(width: number): string[] {
+    return this.current?.render(width) ?? []
+  }
+
+  handleInput(data: string): void {
+    this.current?.handleInput(data)
+  }
+}
+
 let activeTui: TUI | undefined
 
 /**
@@ -189,6 +221,7 @@ class TuiApp implements TuiHandle {
   private appendedShellCount = 0
   private currentOverlayKind: TuiState['overlay']['kind'] = 'none'
   private overlayHandle: OverlayHandle | undefined
+  private readonly approvalSlot = new ApprovalSlot()
   private wasRunning = false
   private stopped = false
 
@@ -249,7 +282,18 @@ class TuiApp implements TuiHandle {
     })
 
     const dock = new VStack(
-      [noticeText, queuedText, streamingText, pendingToolCallsText, shellRunLiveText, statusBarText, this.editor, permissionText, statsLineText],
+      [
+        noticeText,
+        queuedText,
+        streamingText,
+        pendingToolCallsText,
+        shellRunLiveText,
+        statusBarText,
+        this.approvalSlot,
+        this.editor,
+        permissionText,
+        statsLineText,
+      ],
       { gap: 0 },
     )
     const layoutRoot = new VStack(
@@ -336,7 +380,9 @@ class TuiApp implements TuiHandle {
       case 'agentPresets':
         return new AgentPresetsOverlay(store, actions)
       case 'approval':
-        return new ApprovalOverlay(overlay.approval, actions)
+        // Rendered inline via `approvalSlot` in `updateOverlay` instead —
+        // never reaches a full-screen `showOverlay` panel.
+        return undefined
       case 'userQuestion':
         return new QuestionOverlay(overlay.userQuestion, actions)
     }
@@ -344,12 +390,19 @@ class TuiApp implements TuiHandle {
 
   private updateOverlay(overlay: TuiState['overlay']): void {
     if (overlay.kind === this.currentOverlayKind) return
+    const previousKind = this.currentOverlayKind
     this.currentOverlayKind = overlay.kind
+    if (previousKind === 'approval') this.approvalSlot.set(undefined)
     if (this.overlayHandle !== undefined) {
       this.overlayHandle.hide()
       this.overlayHandle = undefined
-      this.tui.setFocus(this.editor)
     }
+    if (overlay.kind === 'approval') {
+      this.approvalSlot.set(new ApprovalOverlay(overlay.approval, this.options.actions))
+      this.tui.setFocus(this.approvalSlot)
+      return
+    }
+    this.tui.setFocus(this.editor)
     const component = this.buildOverlayComponent(overlay)
     if (component === undefined) return
     this.overlayHandle = this.tui.showOverlay(new FullScreenOverlay(component, this.tui), OVERLAY_OPTIONS)

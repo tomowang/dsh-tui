@@ -49,7 +49,12 @@ export interface AgentPresetsOverlayState {
   readonly error: string | undefined
 }
 
-/** Full-screen overlay replacing the live region's normal controls. */
+/**
+ * Full-screen overlay replacing the live region's normal controls — except
+ * `'approval'`, which `TuiApp` renders inline in the dock (a live-region row
+ * with focus, not a `showOverlay` panel) since it's the highest-frequency
+ * interruption and doesn't need to hide the transcript to be answered.
+ */
 export type Overlay =
   | { readonly kind: 'none' }
   | { readonly kind: 'modelProfile'; readonly modelProfile: ModelProfileOverlayState }
