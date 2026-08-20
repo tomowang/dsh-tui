@@ -254,7 +254,7 @@ class TuiApp implements TuiHandle {
     const streamingText = new DynamicText(width => {
       const streaming = store.getSnapshot().streaming
       if (streaming === undefined) return ''
-      const text = formatStreamingText(streaming.text, streaming.reasoningText) ?? ''
+      const text = formatStreamingText(streaming.text, streaming.reasoningText, this.spinner.current()) ?? ''
       return padTranscriptText(text, width).join('\n')
     })
     const pendingToolCallsText = new DynamicText(width => {

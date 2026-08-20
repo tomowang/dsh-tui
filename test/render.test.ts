@@ -141,17 +141,28 @@ describe('formatEvent — assistant/message', () => {
     expect(line).toBeUndefined()
   })
 
-  it('renders reasoning content ahead of the visible text', () => {
+  it('collapses reasoning to a one-line summary ahead of the visible text, not the full body', () => {
     const line = formatEvent(
       event('assistant/message', {
         message: { content: [{ type: 'reasoning', text: 'weighing options' }, { type: 'text', text: 'the answer' }] },
       }),
       { replay: false },
     )
-    expect(line).toContain('✦ thinking')
+    expect(line).toContain('✦ think ·')
     expect(line).toContain('weighing options')
     expect(line).toContain('the answer')
     expect(line!.indexOf('weighing options')).toBeLessThan(line!.indexOf('the answer'))
+  })
+
+  it('truncates a long reasoning block to its summary preview length', () => {
+    const long = 'x'.repeat(200)
+    const line = formatEvent(
+      event('assistant/message', { message: { content: [{ type: 'reasoning', text: long }, { type: 'text', text: 'ok' }] } }),
+      { replay: false },
+    )
+    expect(line).toContain('✦ think ·')
+    expect(line).not.toContain(long)
+    expect(line).toContain('…')
   })
 
   it('renders reasoning-only content with no visible text', () => {
@@ -159,7 +170,7 @@ describe('formatEvent — assistant/message', () => {
       event('assistant/message', { message: { content: [{ type: 'reasoning', text: 'still thinking' }] } }),
       { replay: false },
     )
-    expect(line).toContain('✦ thinking')
+    expect(line).toContain('✦ think ·')
     expect(line).toContain('still thinking')
   })
 })
@@ -174,17 +185,20 @@ describe('formatStreamingText', () => {
     expect(formatStreamingText('', '')).toBeUndefined()
   })
 
-  it('renders reasoning ahead of text when both are present', () => {
-    const result = formatStreamingText('answer', 'thinking it through')
-    expect(result).toContain('✦ thinking')
-    expect(result).toContain('thinking it through')
-    expect(result).toContain('answer')
-    expect(result!.indexOf('thinking it through')).toBeLessThan(result!.indexOf('answer'))
+  it('shows the spinner frame as the icon on an animated thinking line, not the raw reasoning body, while text has not started yet', () => {
+    const result = formatStreamingText('', 'thinking it through', '⠋')
+    expect(result).toContain('⠋ thinking')
+    expect(result).not.toContain('thinking it through')
   })
 
-  it('renders reasoning alone when text is still empty', () => {
+  it('switches to the plain text once it starts streaming, dropping the reasoning line', () => {
+    const result = formatStreamingText('answer', 'thinking it through', '⠋')
+    expect(result).toBe('\nanswer\n')
+  })
+
+  it('defaults the spinner character when none is passed', () => {
     const result = formatStreamingText('', 'thinking it through')
-    expect(result).toBe('\n\x1b[38;2;168;85;247m✦ thinking\x1b[0m\n\x1b[38;2;168;85;247mthinking it through\x1b[0m\n')
+    expect(result).toContain('✦ thinking')
   })
 })
 

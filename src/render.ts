@@ -56,21 +56,37 @@ export function reasoningOf(content: readonly ContentBlock[]): string {
     .join('')
 }
 
-/** Format one message's reasoning/thinking content: a dim violet label plus dim violet body, set apart from the assistant's visible text. */
-function formatReasoning(text: string): string {
-  return [violet('✦ thinking'), ...splitLines(text).map(violet)].join('\n')
+/** Preview length for a settled step's reasoning summary line — long enough to be useful, short enough that a long thinking block never floods the transcript; the full text is always in `/trajectory`. */
+const REASONING_SUMMARY_LENGTH = 80
+
+/** Format one settled message's reasoning/thinking content as a single collapsed line — the label plus a short preview — never the full body, which stays available via `/trajectory`. */
+function formatReasoningSummary(text: string): string {
+  return violet(`✦ think · ${truncate(text, REASONING_SUMMARY_LENGTH)}`)
 }
 
 /**
- * Format the in-progress step's accumulated text (and any reasoning alongside
- * it), mirroring `assistant/message`'s framing so the block doesn't visually
- * jump once it settles into `<Static>`.
+ * Format one settled step's text (and, ahead of it, a one-line reasoning
+ * summary when the step had any), for the permanent transcript.
  */
-export function formatStreamingText(text: string, reasoningText = ''): string | undefined {
+export function formatSettledMessage(text: string, reasoningText: string): string | undefined {
   const parts: string[] = []
-  if (reasoningText !== '') parts.push(formatReasoning(reasoningText))
+  if (reasoningText !== '') parts.push(formatReasoningSummary(reasoningText))
   if (text !== '') parts.push(renderMarkdown(text))
   return parts.length === 0 ? undefined : `\n${parts.join('\n')}\n`
+}
+
+/**
+ * Format the in-progress step's live region: while reasoning has started but
+ * no visible text has arrived yet, an animated `spinnerChar thinking` line
+ * stands in for the raw, fast-scrolling reasoning body (its settled one-line
+ * `✦ think · …` summary appears in the transcript once the step lands —
+ * see `formatSettledMessage`); once text starts streaming, that text is
+ * shown directly.
+ */
+export function formatStreamingText(text: string, reasoningText = '', spinnerChar = '✦'): string | undefined {
+  if (text === '' && reasoningText === '') return undefined
+  if (text === '') return `\n${violet(`${spinnerChar} thinking`)}\n`
+  return `\n${renderMarkdown(text)}\n`
 }
 
 /** One local shell-escape run's header + output lines, shared by the settled and in-flight renderers below. `exitCode` is `null` while still running. */
@@ -402,7 +418,7 @@ export function formatEvent(event: SessionEvent, options: RenderOptions): string
     }
     case 'assistant/message': {
       const content = event.data.message.content
-      return formatStreamingText(textOf(content), reasoningOf(content))
+      return formatSettledMessage(textOf(content), reasoningOf(content))
     }
     case 'tool/call': {
       // Never gets its own transcript line: while pending it shows as a
