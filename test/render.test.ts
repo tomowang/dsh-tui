@@ -461,6 +461,37 @@ describe('formatEvent — tool/result', () => {
     expect(line?.includes('\n')).toBe(false)
   })
 
+  it('falls back to the call\'s presented command, labeled with the tool name, when the terminal result omits its own title', () => {
+    const callView: ToolCallView = { card: 'terminal', title: 'ls -la' }
+    const resultView: ToolResultView = { card: 'terminal', output: 'total 0\ndrwx------', exitCode: 0 }
+    const tool = fakeTool({ presentCall: () => callView, presentResult: () => resultView })
+    const line = formatEvent(
+      resultEvent('call-1', [{ type: 'text', text: 'raw' }], false),
+      {
+        replay: false,
+        getTool: toolResolver('bash', tool),
+        getToolCall: callResolver('call-1', { name: 'bash', arguments: '{"command":"ls -la"}' }),
+      },
+    )
+    expect(line).toContain('Bash: ls -la')
+  })
+
+  it('shows the command, not the description, in that fallback label — the command is the summary\'s salient detail', () => {
+    const callView: ToolCallView = { card: 'terminal', title: 'ls -la', description: 'List files in the repo root' }
+    const resultView: ToolResultView = { card: 'terminal', output: 'total 0\ndrwx------', exitCode: 0 }
+    const tool = fakeTool({ presentCall: () => callView, presentResult: () => resultView })
+    const line = formatEvent(
+      resultEvent('call-1', [{ type: 'text', text: 'raw' }], false),
+      {
+        replay: false,
+        getTool: toolResolver('bash', tool),
+        getToolCall: callResolver('call-1', { name: 'bash', arguments: '{"command":"ls -la"}' }),
+      },
+    )
+    expect(line).toContain('Bash: ls -la')
+    expect(line).not.toContain('List files in the repo root')
+  })
+
   it('collapses to a single line no matter how large the underlying card body is', () => {
     const output = Array.from({ length: 24 }, (_, index) => `line ${index + 1}`).join('\n')
     const tool = fakeTool({ presentResult: () => ({ card: 'terminal', output }) })
@@ -535,6 +566,28 @@ describe('formatEvent — tool/result', () => {
     expect(line).toContain('read_file')
     expect(line).not.toContain('const x = 1')
     expect(line?.includes('\n')).toBe(false)
+  })
+
+  it('falls back to the call\'s presented title (not the tool name) when the read result omits its own title', () => {
+    const callView: ToolCallView = { card: 'generic', title: 'Read src/a.ts' }
+    const resultView: ToolResultView = {
+      card: 'read',
+      path: 'src/a.ts',
+      offset: 1,
+      lines: [{ number: 1, text: 'const x = 1' }],
+      totalLines: 200,
+    }
+    const tool = fakeTool({ presentCall: () => callView, presentResult: () => resultView })
+    const line = formatEvent(
+      resultEvent('call-1', [{ type: 'text', text: 'raw' }], false),
+      {
+        replay: false,
+        getTool: toolResolver('read_file', tool),
+        getToolCall: callResolver('call-1', { name: 'read_file', arguments: '{}' }),
+      },
+    )
+    expect(line).toContain('Read src/a.ts')
+    expect(line).not.toContain('read_file')
   })
 
   it('collapses a web search card to its title, dropping the citation list', () => {

@@ -190,10 +190,26 @@ function formatCallLines(view: ToolCallView): string[] {
   return [header, ...rawInput]
 }
 
+/**
+ * A presented call's one-line identity. A `TerminalCallView`'s `title` is
+ * deliberately just the bare command with no verb (unlike a `generic`/`diff`
+ * title, which a presenter writes to already read as one, e.g. "Read foo.ts")
+ * — so on its own it reads as arbitrary text with no hint it was a shell
+ * call. Label it with the tool's own name so the one-line summary still
+ * names both what ran and how — the command itself is the detail a reader
+ * wants here; its optional `description` stays a detail-view-only addition
+ * (`formatCallLines` already shows it above the command there).
+ */
+function callSummaryTitle(name: string, view: ToolCallView): string {
+  if (view.card !== 'terminal') return view.title
+  const label = name.length === 0 ? name : name.charAt(0).toUpperCase() + name.slice(1)
+  return `${label}: ${view.title}`
+}
+
 /** A pending call's one-line title, presenting through the tool's `presentCall` when available — shared by the live region's spinner row. */
 function pendingCallTitle(name: string, rawArgs: string, getTool: RenderOptions['getTool']): string {
   const view = presentCallSafely(name, rawArgs, getTool)
-  return view === undefined ? `${name} ${truncate(rawArgs, 100)}` : view.title
+  return view === undefined ? `${name} ${truncate(rawArgs, 100)}` : callSummaryTitle(name, view)
 }
 
 /**
@@ -232,10 +248,25 @@ function presentResultSafely(
   }
 }
 
+/** A `tool/result`'s paired `tool/call`'s presented one-line identity, when both the call and a presenter for it resolve — the "pending-state title" a result view's own optional `title` defers to when omitted (see `ToolResultView` docs in `@deepseek-ai/dsh-tools`). */
+function resolveCallTitle(callId: CallId, options: RenderOptions): string | undefined {
+  const call = options.getToolCall?.(callId)
+  if (call === undefined) return undefined
+  const view = presentCallSafely(call.name, call.arguments, options.getTool)
+  return view === undefined ? undefined : callSummaryTitle(call.name, view)
+}
+
 /** Resolved inputs for rendering a settled `tool/result` event. */
 type ToolResultResolution =
   | { readonly kind: 'error'; readonly line: string }
-  | { readonly kind: 'ok'; readonly icon: string; readonly content: readonly ContentBlock[]; readonly presented: { name: string; view: ToolResultView } | undefined }
+  | {
+      readonly kind: 'ok'
+      readonly icon: string
+      readonly content: readonly ContentBlock[]
+      readonly presented: { name: string; view: ToolResultView } | undefined
+      /** The paired call's presented title, a result view defers to when its own `title` is omitted. */
+      readonly callTitle: string | undefined
+    }
 
 /** Shared by the transcript's compact line and the Tool Cards overlay's summary/detail, so all three read the same icon and presented view instead of re-deriving it. */
 function resolveToolResult(event: Extract<SessionEvent, { type: 'tool/result' }>, options: RenderOptions): ToolResultResolution {
@@ -252,12 +283,12 @@ function resolveToolResult(event: Extract<SessionEvent, { type: 'tool/result' }>
   const callId = event.data.message.source.callId
   const result: ToolResult = { content: block.content, isError: failed, ...event.data.meta !== undefined ? { meta: event.data.meta } : {} }
   const presented = presentResultSafely(callId, result, options)
-  return { kind: 'ok', icon, content: block.content, presented }
+  return { kind: 'ok', icon, content: block.content, presented, callTitle: resolveCallTitle(callId, options) }
 }
 
-/** A presented completed call's lines: an outcome-colored header plus card-specific body. */
-function formatResultLines(fallbackName: string, icon: string, rawContent: readonly ContentBlock[], view: ToolResultView): string[] {
-  const header = `${icon} ${view.title ?? fallbackName}`
+/** A presented completed call's lines: an outcome-colored header plus card-specific body. `callTitle` is the paired call's presented title — a result view's own `title` field defers to it (the "pending-state title") when omitted, so it comes before the flat fallback name. */
+function formatResultLines(fallbackName: string, callTitle: string | undefined, icon: string, rawContent: readonly ContentBlock[], view: ToolResultView): string[] {
+  const header = `${icon} ${view.title ?? callTitle ?? fallbackName}`
   switch (view.card) {
     case 'generic': {
       const body = splitLines(textOf(view.content ?? rawContent)).map(dim)
@@ -290,9 +321,10 @@ function formatResultLines(fallbackName: string, icon: string, rawContent: reado
       return lines
     }
     case 'read': {
-      // Falls back to the read path, not the tool name — a read result's
-      // salient identity is which file it read, not which tool read it.
-      const lines = [`${icon} ${view.title ?? view.path}`]
+      // Falls back to the call's title, then the read path, not the tool
+      // name — a read result's salient identity is which file it read, not
+      // which tool read it.
+      const lines = [`${icon} ${view.title ?? callTitle ?? view.path}`]
       for (const line of view.lines) lines.push(dim(`${line.number}: ${line.text}`))
       if (view.totalLines > 0) {
         const last = view.offset + view.lines.length - 1
@@ -423,17 +455,17 @@ export function formatEvent(event: SessionEvent, options: RenderOptions): string
 export function formatToolCardSummary(event: SessionEvent, options: RenderOptions): string {
   if (event.type === 'tool/call') {
     const view = presentCallSafely(event.data.name, event.data.arguments, options.getTool)
-    return view === undefined ? fallbackCallLine(event.data.name, event.data.arguments) : `${cyan('⚙')} ${view.title}`
+    return view === undefined ? fallbackCallLine(event.data.name, event.data.arguments) : `${cyan('⚙')} ${callSummaryTitle(event.data.name, view)}`
   }
   if (event.type === 'tool/result') {
     const resolved = resolveToolResult(event, options)
     if (resolved.kind === 'error') return resolved.line
-    const { icon, content, presented } = resolved
+    const { icon, content, presented, callTitle } = resolved
     if (presented === undefined) {
       const text = truncate(textOf(content), 100)
       return text === '' ? icon : `${icon} ${dim(text)}`
     }
-    return `${icon} ${presented.view.title ?? presented.name}`
+    return `${icon} ${presented.view.title ?? callTitle ?? presented.name}`
   }
   return ''
 }
@@ -452,12 +484,12 @@ export function formatToolCardDetail(event: SessionEvent, options: RenderOptions
   if (event.type === 'tool/result') {
     const resolved = resolveToolResult(event, options)
     if (resolved.kind === 'error') return [resolved.line]
-    const { icon, content, presented } = resolved
+    const { icon, content, presented, callTitle } = resolved
     if (presented === undefined) {
       const text = textOf(content)
       return text === '' ? [icon] : [icon, ...splitLines(text)]
     }
-    return formatResultLines(presented.name, icon, content, presented.view)
+    return formatResultLines(presented.name, callTitle, icon, content, presented.view)
   }
   return []
 }
