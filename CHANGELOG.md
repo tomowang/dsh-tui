@@ -2,6 +2,24 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.6.0] - 2026-08-20
+
+### Bug Fixes
+
+- *(tui)* Seed prompt-history recall from persisted history
+- *(tui)* Fall back to the call's title, not the tool name, on tool results
+- *(tui)* Collapse reasoning to a one-line summary instead of the raw body
+- *(tui)* Raise the slash-command/mention dropdown to pi-tui's max height
+
+### Chores
+
+- *(deps)* Upgrade @deepseek-ai/dsh-* packages to 0.1.0-rc.8
+
+### Features
+
+- *(tui)* Add /plan [message] and /plan off commands for plan mode
+- *(tui)* Add /goal command support for goal mode
+
 ## [0.5.0] - 2026-08-19
 
 ### Bug Fixes
