@@ -53,7 +53,10 @@ export class CustomEditor extends Editor {
     // and below, see `dist/components/editor.js`), so a content row's first
     // `paddingX` characters are always literal, uncolored spaces, safe to
     // overwrite in place without touching the actual text or its layout.
-    super(tui, editorTheme, { paddingX: 2 })
+    // 20 is pi-tui's own hard cap for `autocompleteMaxVisible` (see
+    // `EditorOptions` in `dist/components/editor.d.ts`) — the highest this
+    // dropdown can go without pi-tui adding a taller ceiling itself.
+    super(tui, editorTheme, { paddingX: 2, autocompleteMaxVisible: 20 })
     this.setAutocompleteProvider(new PromptAutocompleteProvider(deps.getFileCandidates))
     this.onSubmit = (text) => this.handleSubmit(text)
     // Seed up/down-arrow recall with the persisted history (oldest first) so
