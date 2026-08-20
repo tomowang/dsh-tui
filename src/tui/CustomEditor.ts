@@ -21,7 +21,7 @@
 import type { AgentStatus } from '@deepseek-ai/dsh-agent'
 import { Editor, Key, matchesKey, type TUI } from '@earendil-works/pi-tui'
 import type { TuiActions } from './actions.js'
-import { matchSlashCommands, runSlashCommand } from './commands.js'
+import { matchSlashCommands, parsePlanCommand, runSlashCommand } from './commands.js'
 import { editorTheme, shellModeEditorBorderColor } from './piTheme.js'
 import { PromptAutocompleteProvider, type GetFileCandidates } from './promptAutocomplete.js'
 import { theme, fg } from './theme.js'
@@ -105,6 +105,13 @@ export class CustomEditor extends Editor {
     this.addToHistory(trimmed)
     if (shellMode) {
       this.actions.runShell(trimmed)
+      return
+    }
+    // `/plan` takes a free-text argument (a message, or `off`), so it's
+    // parsed ahead of the whitespace-free command matching below.
+    const planArgs = parsePlanCommand(trimmed)
+    if (planArgs !== undefined) {
+      this.actions.plan(planArgs)
       return
     }
     const matches = trimmed.startsWith('/') && !/\s/.test(trimmed) ? matchSlashCommands(trimmed) : []

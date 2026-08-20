@@ -27,6 +27,7 @@ import type { AgentPreset } from '@deepseek-ai/dsh-agent-presets'
 import { ManualCompactionError } from '@deepseek-ai/dsh-compaction'
 import type { ManualCompactionErrorCode } from '@deepseek-ai/dsh-compaction'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { foldPlanMode } from '@deepseek-ai/dsh-plan-mode'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
@@ -224,6 +225,10 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
   // engine just tells the reader /compact is unavailable instead of
   // refusing to start.
   const compaction = ctx.get('compaction')
+  // Same optional-service pattern: a profile without a mounted plan-mode
+  // controller just tells the reader /plan is unavailable instead of
+  // refusing to start.
+  const planMode = ctx.get('planMode')
   // Same optional-service pattern: a profile without a mounted agent-preset
   // roster just shows no preset in the status bar and tells the reader
   // /presets is unavailable instead of refusing to start.
@@ -858,6 +863,40 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
             store.setNotice(`compaction failed: ${message}`)
           })
           .finally(() => { compacting = false })
+      },
+      // Mirrors `@deepseek-ai/dsh-plan-mode`'s own `/plan` command handler
+      // (its result text is model-facing there; reused here as the notice).
+      plan(rawInput) {
+        if (planMode === undefined) {
+          store.setNotice('plan mode is not available in this profile')
+          return
+        }
+        const message = rawInput.trim()
+        if (message === 'off') {
+          switch (planMode.set(agent, false)) {
+            case 'committed':
+              store.setNotice('Plan mode off.')
+              return
+            case 'queued':
+              store.setNotice('Leaving plan mode (applies from the next step).')
+              return
+            case 'cancelled':
+              store.setNotice('Plan mode entry cancelled.')
+              return
+            case 'noop':
+              store.setNotice(foldPlanMode(agent.session.events)
+                ? 'Leaving plan mode (applies from the next step).'
+                : 'Plan mode is already inactive.')
+              return
+          }
+        }
+        const outcome = planMode.set(agent, true)
+        if (message !== '') {
+          agent.steer(createUserMessage({ content: [{ type: 'text', text: message }], source: { kind: 'user' } }))
+        }
+        store.setNotice(outcome === 'committed'
+          ? 'Plan mode on. Use /plan off to leave.'
+          : 'Entering plan mode (applies from the next step). Use /plan off to leave.')
       },
       ensureFileIndex() {
         void ensureFileIndexLoaded()

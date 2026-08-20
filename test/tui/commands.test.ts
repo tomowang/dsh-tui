@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { TuiActions } from '../../src/tui/PromptInput.js'
-import { matchSlashCommands, runSlashCommand } from '../../src/tui/commands.js'
+import type { TuiActions } from '../../src/tui/actions.js'
+import { matchSlashCommands, parsePlanCommand, runSlashCommand } from '../../src/tui/commands.js'
 
 function stubActions(): TuiActions {
   return {
@@ -12,6 +12,7 @@ function stubActions(): TuiActions {
     clear: vi.fn(),
     cyclePermission: vi.fn(),
     compact: vi.fn(),
+    plan: vi.fn(),
     ensureFileIndex: vi.fn(),
     openModelProfile: vi.fn(),
     closeModelProfile: vi.fn(),
@@ -59,6 +60,40 @@ describe('matchSlashCommands', () => {
 
   it('is case-sensitive', () => {
     expect(matchSlashCommands('/M')).toEqual([])
+  })
+
+  it('matches /plan against its own full text', () => {
+    expect(matchSlashCommands('/plan').map(c => c.command)).toEqual(['/plan'])
+  })
+})
+
+describe('parsePlanCommand', () => {
+  it('returns an empty argument for bare /plan', () => {
+    expect(parsePlanCommand('/plan')).toBe('')
+  })
+
+  it('trims surrounding whitespace off the bare command', () => {
+    expect(parsePlanCommand('  /plan  ')).toBe('')
+  })
+
+  it('returns the off argument verbatim', () => {
+    expect(parsePlanCommand('/plan off')).toBe('off')
+  })
+
+  it('returns an arbitrary message argument, trimmed', () => {
+    expect(parsePlanCommand('/plan investigate the auth bug first ')).toBe('investigate the auth bug first')
+  })
+
+  it('does not match a longer command sharing the /plan prefix', () => {
+    expect(parsePlanCommand('/plans')).toBeUndefined()
+  })
+
+  it('does not match plain text', () => {
+    expect(parsePlanCommand('not a command')).toBeUndefined()
+  })
+
+  it('does not match an unrelated command', () => {
+    expect(parsePlanCommand('/compact')).toBeUndefined()
   })
 })
 
@@ -136,6 +171,12 @@ describe('runSlashCommand', () => {
   it('calls nothing for an unrecognized command', () => {
     const actions = stubActions()
     runSlashCommand('/nope', actions)
+    expect(totalCalls(actions)).toBe(0)
+  })
+
+  it('does not dispatch /plan — CustomEditor routes it through parsePlanCommand/actions.plan instead', () => {
+    const actions = stubActions()
+    runSlashCommand('/plan', actions)
     expect(totalCalls(actions)).toBe(0)
   })
 })

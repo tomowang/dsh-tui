@@ -34,3 +34,4 @@ minimumReleaseAgeExclude:
   - '@deepseek-ai/dsh-tools@0.1.0-rc.8'
   - '@deepseek-ai/dsh-user-approval@0.1.0-rc.8'
   - '@deepseek-ai/dsh-user-questions@0.1.0-rc.8'
+  - '@deepseek-ai/dsh-plan-mode@0.1.0-rc.8'

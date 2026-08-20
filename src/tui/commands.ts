@@ -20,6 +20,7 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
   { command: '/context', description: 'Show context window usage' },
   { command: '/plugins', description: 'Show the loaded plugin tree' },
   { command: '/presets', description: 'Show and switch agent presets (only while the session is blank)' },
+  { command: '/plan', description: 'Enter plan mode, optionally with a message; /plan off to leave' },
   { command: '/compact', description: 'Summarize and compact session history' },
   { command: '/clear', description: 'Clear the screen and start a new session' },
   { command: '/exit', description: 'Exit dsh-tui' },
@@ -39,6 +40,21 @@ export function commandQuery(value: string): { isCommandMode: boolean; matches: 
   const query = value.trim()
   const isCommandMode = value.startsWith('/') && !/\s/.test(query)
   return { isCommandMode, matches: isCommandMode ? matchSlashCommands(query) : [] }
+}
+
+/** `/plan` on its own, or followed by whitespace — matches the harness's own `/plan [message]`/`/plan off` syntax. */
+const PLAN_COMMAND = /^\/plan(?:$|\s)/u
+
+/**
+ * `/plan`'s argument takes free text (a message, or the literal `off`), so unlike every other
+ * command it can't route through {@link matchSlashCommands}'s whitespace-free matching.
+ * @param text - Raw submitted line.
+ * @returns The trimmed argument text, or `undefined` when `text` isn't a `/plan` invocation.
+ */
+export function parsePlanCommand(text: string): string | undefined {
+  const trimmed = text.trim()
+  if (!PLAN_COMMAND.test(trimmed)) return undefined
+  return trimmed.slice('/plan'.length).trim()
 }
 
 export function runSlashCommand(command: string, actions: TuiActions): void {

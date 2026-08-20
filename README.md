@@ -32,6 +32,7 @@ An open-source terminal front door for [DeepSeek Harness](https://github.com/dee
 - **Markdown rendering** — assistant text with an unambiguous Markdown signal (fenced code, headers, lists, blockquotes, rules, tables, links, bold/strikethrough, inline code) is styled for the terminal; plain prose passes through untouched.
 - **Permission preset cycling** — `Shift+Tab` cycles `read-only` / `workspace-write` / `danger-full-access` / `custom`, shown live in the prompt area.
 - **In-terminal approvals and questions** — a tool call parked on an `ask` permission decision is answered right in the terminal (allow once / reject), and `ask_user_question`/plan-mode's plan review present as an option list with multi-select and free-text "Other…", `esc` to skip.
+- **Plan mode** — `/plan [message]` enters plan mode (optionally steering a first message under it), `/plan off` leaves it; a model-proposed plan lands in the existing question flow as an Approve/Keep-planning review.
 - **Manual compaction** — `/compact` summarizes and compacts session history on demand.
 - **Persisted prompt history** — submitted lines are saved across processes and `/clear`, recalled with `↑`/`↓`.
 - **Readline-style input** — word/line motion, kill/yank-style deletes, multi-line drafts, and shell-like double-press `Ctrl+C`/`Ctrl+D` to exit.
@@ -75,6 +76,8 @@ Any row `--dump-config` prints — the model adapter, tool set, sandbox policy, 
 | `/tools` | browse and expand tool cards past their collapsed transcript line |
 | `/context` | show context-window usage as a bar-chart breakdown |
 | `/plugins` | show the loaded Cordis plugin tree and fiber state |
+| `/plan [message]` | enter plan mode, optionally steering `message` as the first step under it |
+| `/plan off` | leave plan mode |
 | `/compact` | summarize and compact session history |
 | `/clear` | flush the current session and start a new one |
 | `/exit`, `/quit` | cancel, wait for idle, flush the session, exit |
