@@ -27,6 +27,8 @@ import type { AgentPreset } from '@deepseek-ai/dsh-agent-presets'
 import { ManualCompactionError } from '@deepseek-ai/dsh-compaction'
 import type { ManualCompactionErrorCode } from '@deepseek-ai/dsh-compaction'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { GoalError } from '@deepseek-ai/dsh-goal'
+import type { GoalProjection, GoalRef, GoalView } from '@deepseek-ai/dsh-goal'
 import { foldPlanMode } from '@deepseek-ai/dsh-plan-mode'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
@@ -48,12 +50,13 @@ import type {} from '@deepseek-ai/dsh-permission-presets'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
 // Type-only: resolves ctx.sessionProjections and its sessionStats/tokenUsage
 // SessionProjectionMap entries for the status bar's stats line.
-import type {} from '@deepseek-ai/dsh-session-projection'
+import type { SessionProjectionMap } from '@deepseek-ai/dsh-session-projection'
 import type {} from '@deepseek-ai/dsh-session-stats'
 import type {} from '@deepseek-ai/dsh-token-meter'
 
 import { ensureSessionIdPrefix, stripSessionIdPrefix } from './sessionId.js'
 import { SLASH_COMMANDS, SLASH_COMMAND_WIDTH } from './tui/commands.js'
+import { goalPhaseLabel } from './tui/liveText.js'
 import { TuiStore } from './tui/store.js'
 import type { ModelProfileOverlayState, PermissionState, PresetState, StatsSnapshot } from './tui/store.js'
 import { mountTui, restoreActiveTerminal, type TuiHandle } from './tui/TuiApp.js'
@@ -153,6 +156,58 @@ function sessionBlank(session: Session): boolean {
   return !session.events.some(event => event.type === 'turn/start')
 }
 
+// --- `/goal` helpers, mirroring `@deepseek-ai/dsh-command-goal`'s own handler ---
+// The TUI intercepts `/goal` in the prompt (like `/plan`) instead of
+// dispatching through `ctx.commands`, so the handler below re-implements
+// command-goal's grammar and result text as the notice.
+
+/** Usage line for `/goal`, matching `command-goal`'s `USAGE`. */
+const GOAL_USAGE = 'Usage: /goal [<objective>|clear|edit <objective>|pause|resume]'
+
+/** Exact current compare-and-set ref for one live goal view. */
+function goalRef(goal: GoalView): GoalRef {
+  return { id: goal.id, revision: goal.revision }
+}
+
+/** Commands that are meaningful from one exact live state, mirroring `command-goal`'s `commandHint`. */
+function goalCommandHint(goal: GoalView): string {
+  if (goal.phase === 'active') {
+    return goal.activation === 'armed'
+      ? '/goal edit <objective>, /goal pause, /goal clear'
+      : '/goal edit <objective>, /goal resume, /goal clear'
+  }
+  switch (goal.phase) {
+    case 'paused':
+    case 'blocked':
+      return '/goal edit <objective>, /goal resume, /goal clear'
+    case 'complete':
+      return '/goal <objective>, /goal clear'
+  }
+}
+
+/** Render one `/goal` result as the notice, mirroring `command-goal`'s `renderGoal`. */
+function renderGoalNotice(title: string, goal: GoalView): string {
+  const reason = goal.phase === 'blocked' ? goal.blockedReason : undefined
+  /* v8 ignore next -- durable replay guarantees every blocked goal carries its validated reason */
+  if (goal.phase === 'blocked' && reason === undefined) throw new TypeError('blocked goal is missing its reason')
+  const blocker = reason === undefined ? [] : [`Blocker: ${reason.code}: ${reason.message}`]
+  return [
+    title,
+    `Status: ${goalPhaseLabel(goal.phase)}`,
+    ...blocker,
+    `Objective: ${goal.objective}`,
+    `Rounds: ${goal.roundsStarted}/${goal.maxGoalRounds}`,
+    `Activation: ${goal.activation}`,
+    '',
+    `Commands: ${goalCommandHint(goal)}`,
+  ].join('\n')
+}
+
+/** Notice for an operation that requires a current goal, mirroring `command-goal`'s `missingGoal`. */
+function goalMissingNotice(action: string): string {
+  return `No goal is currently set; /goal ${action} requires one. ${GOAL_USAGE}`
+}
+
 /** Plugin config: startup values resolved from this app's provider service. */
 export interface Config {
   /** Session id to resume; absent starts a fresh session. */
@@ -229,6 +284,11 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
   // controller just tells the reader /plan is unavailable instead of
   // refusing to start.
   const planMode = ctx.get('planMode')
+  // Same optional-service pattern: a profile without the goal domain
+  // (dsh-base composes it, but an overridden patch may not) just tells the
+  // reader /goal is unavailable and hides the goal strip instead of refusing
+  // to start.
+  const goals = ctx.get('goals')
   // Same optional-service pattern: a profile without a mounted agent-preset
   // roster just shows no preset in the status bar and tells the reader
   // /presets is unavailable instead of refusing to start.
@@ -284,18 +344,30 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
     return { current: permissionPresets.current(events), names: permissionPresets.names }
   }
 
+  /**
+   * One shared projection cut's raw values, or `undefined` without a mounted
+   * registry/unit. `snapshot()` schema-validates every registered key on
+   * each call, so callers needing more than one key (e.g. the initial store
+   * seed below) must fetch this once and derive both from it rather than
+   * calling `statsSnapshot`/`goalSnapshot` separately.
+   */
+  function projectionValues(session: Session): Partial<SessionProjectionMap> | undefined {
+    return sessionProjections?.snapshot(session).values
+  }
+
   /** The session's current stats-line figures, or empty sides without a mounted registry/unit. */
-  function statsSnapshot(session: Session): StatsSnapshot {
-    if (sessionProjections === undefined) {
-      return { sessionStats: undefined, tokenUsage: undefined, contextPressure: undefined, contextBreakdown: undefined }
-    }
-    const { values } = sessionProjections.snapshot(session)
+  function statsSnapshot(values: Partial<SessionProjectionMap> | undefined): StatsSnapshot {
     return {
-      sessionStats: values.sessionStats,
-      tokenUsage: values.tokenUsage,
-      contextPressure: values.contextPressure,
-      contextBreakdown: values.contextBreakdown,
+      sessionStats: values?.sessionStats,
+      tokenUsage: values?.tokenUsage,
+      contextPressure: values?.contextPressure,
+      contextBreakdown: values?.contextBreakdown,
     }
+  }
+
+  /** The session's current goal projection (the 'goal' key), or `undefined` without a mounted registry/unit. */
+  function goalSnapshot(values: Partial<SessionProjectionMap> | undefined): GoalProjection | null | undefined {
+    return values?.goal
   }
 
   /** The session's current agent preset, or `undefined` without a mounted service. */
@@ -725,7 +797,9 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
     store.setStatus(agent.status)
     store.setQueued([...agent.inbox.nextStep, ...agent.inbox.nextTurn])
     store.setPermission(permissionState(agent.session.events))
-    store.setStats(statsSnapshot(agent.session))
+    const initialProjection = projectionValues(agent.session)
+    store.setStats(statsSnapshot(initialProjection))
+    store.setGoal(goalSnapshot(initialProjection))
     store.setPreset(currentPresetState(agent.session))
     if (presetNotice !== undefined) store.setNotice(presetNotice)
 
@@ -766,8 +840,12 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
     if (sessionProjections !== undefined) {
       unsubscribers.push(sessionProjections.onChanged((session, key) => {
         if (session !== agent.session) return
+        if (key === 'goal') {
+          store.setGoal(goalSnapshot(projectionValues(agent.session)))
+          return
+        }
         if (key !== 'sessionStats' && key !== 'tokenUsage' && key !== 'contextPressure' && key !== 'contextBreakdown') return
-        store.setStats(statsSnapshot(agent.session))
+        store.setStats(statsSnapshot(projectionValues(agent.session)))
       }))
     }
 
@@ -888,6 +966,12 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
                 ? 'Leaving plan mode (applies from the next step).'
                 : 'Plan mode is already inactive.')
               return
+            default:
+              // Defensive: an outcome outside today's known union must still
+              // stop here rather than fall through into the "entering plan
+              // mode" code below, which would invert an explicit /plan off.
+              store.setNotice('Plan mode off.')
+              return
           }
         }
         const outcome = planMode.set(agent, true)
@@ -897,6 +981,78 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
         store.setNotice(outcome === 'committed'
           ? 'Plan mode on. Use /plan off to leave.'
           : 'Entering plan mode (applies from the next step). Use /plan off to leave.')
+      },
+      // Mirrors `@deepseek-ai/dsh-command-goal`'s own `/goal` command handler
+      // (its result text is model-facing there; reused here as the notice).
+      goal(command) {
+        if (goals === undefined) {
+          store.setNotice('goal mode is not available in this profile')
+          return
+        }
+        try {
+          const current = goals.get(agent)
+          switch (command.kind) {
+            case 'show':
+              store.setNotice(current === undefined
+                ? `No goal is currently set.\n${GOAL_USAGE}`
+                : renderGoalNotice('Goal', current))
+              return
+            case 'invalid-edit':
+              store.setNotice(`Goal editing requires a replacement objective.\n${GOAL_USAGE}`)
+              return
+            case 'create':
+              if (current !== undefined && current.phase !== 'complete') {
+                store.setNotice(`A goal is already ${goalPhaseLabel(current.phase)}. Use /goal edit <objective> to change it or /goal clear before replacing it.`)
+                return
+              }
+              store.setNotice(renderGoalNotice('Goal created', goals.create(agent, { objective: command.objective })))
+              return
+            case 'edit':
+              if (current === undefined) {
+                store.setNotice(goalMissingNotice(command.kind))
+                return
+              }
+              if (current.phase === 'complete') {
+                // A completed goal may be replaced by a fresh create, exactly
+                // like command-goal's own edit branch.
+                store.setNotice(renderGoalNotice('Goal created', goals.create(agent, { objective: command.objective })))
+                return
+              }
+              store.setNotice(renderGoalNotice('Goal updated', goals.edit(agent, goalRef(current), { objective: command.objective })))
+              return
+            case 'pause':
+              if (current === undefined) {
+                store.setNotice(goalMissingNotice(command.kind))
+                return
+              }
+              store.setNotice(renderGoalNotice('Goal paused', goals.pause(agent, goalRef(current))))
+              return
+            case 'resume':
+              if (current === undefined) {
+                store.setNotice(goalMissingNotice(command.kind))
+                return
+              }
+              store.setNotice(renderGoalNotice('Goal resumed', goals.resume(agent, goalRef(current))))
+              return
+            case 'clear':
+              if (current === undefined) {
+                store.setNotice('No goal to clear.')
+                return
+              }
+              goals.clear(agent, goalRef(current))
+              store.setNotice('Goal cleared.')
+              return
+          }
+        } catch (error: unknown) {
+          if (error instanceof GoalError) {
+            store.setNotice('The goal command is not valid for the current state. Run /goal to view available commands.')
+            return
+          }
+          // Degrade like `compact()` does for any error type, rather than
+          // crashing the process — e.g. `renderGoalNotice`'s guard against a
+          // malformed blocked-goal record throws a plain `TypeError` here.
+          store.setNotice(`goal command failed: ${error instanceof Error ? error.message : String(error)}`)
+        }
       },
       ensureFileIndex() {
         void ensureFileIndexLoaded()

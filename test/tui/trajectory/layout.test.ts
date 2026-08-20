@@ -130,6 +130,25 @@ describe('buildTrajectoryRows', () => {
     expect(record?.source).toEqual({ kind: 'user' })
   })
 
+  it('classifies a goal continuation round as a context record labeling its round', () => {
+    const rows = buildTrajectoryRows(
+      [
+        event('turn/start', 1, { turn: 1 }),
+        event('user/message', 2, {
+          source: { kind: 'goal', goalId: 'goal-1', revision: 1, round: 3 },
+          content: [{ type: 'text', text: '<goal_round>…' }],
+        }),
+      ],
+      new Set(),
+    )
+    const record = recordRows(rows)[0]?.record
+    expect(record?.kind).toBe('context')
+    expect(record?.label).toBe('goal · round 3')
+    // The full round prompt still reaches the Preview/Raw tabs, never the
+    // one-line ledger label.
+    expect(record?.payload).toBe('<goal_round>…')
+  })
+
   it('falls back to a reasoning preview for an assistant message with only thinking and tool calls', () => {
     const rows = buildTrajectoryRows(
       [

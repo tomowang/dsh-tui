@@ -235,6 +235,23 @@ describe('TuiStore setters without an equality guard', () => {
     expect(store.getSnapshot().stats).toBe(stats)
   })
 
+  it('setGoal starts undefined and stores the projection, null included', () => {
+    const store = new TuiStore({ events: [] })
+    expect(store.getSnapshot().goal).toBeUndefined()
+
+    const goal = {
+      goal: { id: 'goal-1', revision: 2, objective: 'ship it', phase: 'active', maxGoalRounds: 256 },
+      roundsStarted: 1,
+      createdAt: 1,
+      updatedAt: 2,
+    }
+    store.setGoal(goal)
+    expect(store.getSnapshot().goal).toBe(goal)
+
+    store.setGoal(null)
+    expect(store.getSnapshot().goal).toBeNull()
+  })
+
   it('setPreset updates the field and notifies', () => {
     const store = new TuiStore({ events: [] })
     store.setPreset({ current: 'Code mode', blank: true })

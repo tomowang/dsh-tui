@@ -48,7 +48,7 @@ import type { RenderOptions } from '../render.js'
 import { formatEvent, formatPendingToolCalls, formatShellRun, formatShellRunLive, formatStreamingText } from '../render.js'
 import { buildBannerText } from './bannerText.js'
 import { buildContextLine, buildStatsLine } from './statsFormat.js'
-import { buildPermissionText, buildQueuedText, buildStatusBarText } from './liveText.js'
+import { buildGoalBarText, buildPermissionText, buildQueuedText, buildStatusBarText } from './liveText.js'
 import { createTranscriptLine, DynamicText, padTranscriptText } from './text.js'
 import { CustomEditor } from './CustomEditor.js'
 import { Spinner } from './Spinner.js'
@@ -246,6 +246,10 @@ class TuiApp implements TuiHandle {
       const notice = store.getSnapshot().notice
       return notice === undefined ? '' : secondary(notice)
     })
+    // The goal strip, docked above the queued preview — the terminal GoalBar
+    // (see `buildGoalBarText`), mirroring the web portal's input-dock stack
+    // where the GoalBar card sits above the Queue panel.
+    const goalText = new DynamicText(() => buildGoalBarText(store.getSnapshot().goal))
     const queuedText = new DynamicText(() => buildQueuedText(store.getSnapshot().queued))
     const streamingText = new DynamicText(width => {
       const streaming = store.getSnapshot().streaming
@@ -287,6 +291,7 @@ class TuiApp implements TuiHandle {
     const dock = new VStack(
       [
         noticeText,
+        goalText,
         queuedText,
         streamingText,
         pendingToolCallsText,

@@ -7,6 +7,7 @@
  * @module @tomowang/dsh-tui/tui/actions
  */
 
+import type { GoalCommand } from './commands.js'
 import type { ProviderDraft, ProviderRow } from './modelProfile/types.js'
 import type { QuestionAnswer } from './interaction/types.js'
 
@@ -31,6 +32,8 @@ export interface TuiActions {
   compact(): void
   /** Enter plan mode (optionally steering `rawInput` as its first message), or `off` to leave it, via `ctx.planMode`. */
   plan(rawInput: string): void
+  /** Run one parsed `/goal` command (show/create/edit/pause/resume/clear) via `ctx.goals`. */
+  goal(command: GoalCommand): void
   /** Start (or no-op if already loaded/loading) the background load backing the `@`-mention dropdown. */
   ensureFileIndex(): void
 

@@ -315,6 +315,28 @@ function formatResultLines(fallbackName: string, icon: string, rawContent: reado
 }
 
 /**
+ * One `goal/change` mutation's transcript line, mirroring the durable
+ * ledger's `operation`. An explicit `switch` with no `default` over the
+ * post-`clear` operation union (rather than a sequential `if` chain ending
+ * in an implicit "must be block") so a future `dsh-goal` operation the TUI
+ * doesn't know about fails to compile here instead of silently rendering
+ * the wrong line.
+ */
+function goalChangeLine(change: SessionEvent<'goal/change'>['data']): string {
+  if (change.operation === 'clear') return `${dim('🗑')} goal cleared`
+  const goal = change.goal
+  switch (change.operation) {
+    case 'create': return `${cyan('🎯')} goal set: ${goal.objective}`
+    case 'edit': return `${cyan('🎯')} goal updated: ${goal.objective}`
+    case 'pause': return `${yellow('⏸')} goal paused: ${goal.objective}`
+    case 'resume': return `${green('▶')} goal resumed: ${goal.objective}`
+    case 'complete': return `${green('✓')} goal complete: ${goal.objective}`
+    case 'block':
+      return `${red('⛔')} goal blocked${goal.blockedReason === undefined ? '' : `: ${goal.blockedReason.code}: ${goal.blockedReason.message}`}`
+  }
+}
+
+/**
  * Format one durable session event as a terminal line, or `undefined` for
  * events this viewer does not present. Unknown event types are silently
  * skipped: the log's vocabulary is merge-extensible and a transcript viewer
@@ -336,6 +358,13 @@ export function formatEvent(event: SessionEvent, options: RenderOptions): string
       if (source.kind === 'plugin') {
         const summary = source.form === 'notice' ? source.summary : undefined
         return `${dim('⊕ context ›')} ${source.plugin}${summary === undefined ? '' : ` · ${summary}`}`
+      }
+      // An admitted goal continuation round: collapsed to a label like the
+      // web portal's context rows, but naming the round so automatic
+      // continuation is legible in the transcript. The `<goal_round>` prompt
+      // content itself stays folded away.
+      if (source.kind === 'goal') {
+        return `${dim('⊕ goal ›')} round ${source.round}`
       }
       return `${dim('⊕ context ›')} ${source.kind}`
     }
@@ -373,6 +402,12 @@ export function formatEvent(event: SessionEvent, options: RenderOptions): string
     case 'compaction/end': {
       return event.data.error === undefined ? undefined : `${red('✖')} compaction: ${event.data.error}`
     }
+    case 'goal/change':
+      // The durable goal ledger, one line per mutation — the web portal
+      // covers this trace with its `/goal` command-input chat node, which the
+      // TUI has no equivalent of (the prompt consumes `/goal` without echoing
+      // it), so the log-first transcript renders the event itself.
+      return goalChangeLine(event.data)
     default:
       // Merge-extensible union: events this viewer does not present fall through.
       return undefined

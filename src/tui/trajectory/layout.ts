@@ -54,6 +54,9 @@ function userLabel(data: SessionEvent<'user/message'>['data']): string {
     const summary = source.form === 'notice' ? source.summary : undefined
     return `${source.plugin}${summary === undefined ? '' : ` · ${summary}`}`
   }
+  // An admitted goal continuation round — the round number is the salient
+  // fact (the injected `<goal_round>` prompt stays folded, like `formatEvent`).
+  if (source.kind === 'goal') return `goal · round ${source.round}`
   return source.kind
 }
 

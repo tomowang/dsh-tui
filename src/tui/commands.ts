@@ -20,6 +20,7 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
   { command: '/context', description: 'Show context window usage' },
   { command: '/plugins', description: 'Show the loaded plugin tree' },
   { command: '/presets', description: 'Show and switch agent presets (only while the session is blank)' },
+  { command: '/goal', description: 'Set or view the long-running goal: /goal <objective> | clear | edit <objective> | pause | resume' },
   { command: '/plan', description: 'Enter plan mode, optionally with a message; /plan off to leave' },
   { command: '/compact', description: 'Summarize and compact session history' },
   { command: '/clear', description: 'Clear the screen and start a new session' },
@@ -55,6 +56,41 @@ export function parsePlanCommand(text: string): string | undefined {
   const trimmed = text.trim()
   if (!PLAN_COMMAND.test(trimmed)) return undefined
   return trimmed.slice('/plan'.length).trim()
+}
+
+/** One parsed `/goal` invocation, mirroring `@deepseek-ai/dsh-command-goal`'s `GoalCommand` union. */
+export type GoalCommand =
+  | { readonly kind: 'show' }
+  | { readonly kind: 'create'; readonly objective: string }
+  | { readonly kind: 'edit'; readonly objective: string }
+  | { readonly kind: 'invalid-edit' }
+  | { readonly kind: 'pause' }
+  | { readonly kind: 'resume' }
+  | { readonly kind: 'clear' }
+
+/** `/goal` on its own, or followed by whitespace — its objective is free text, so it shares `/plan`'s parse-ahead shape. */
+const GOAL_COMMAND = /^\/goal(?:$|\s)/u
+
+/**
+ * Parse a `/goal` invocation exactly the way `@deepseek-ai/dsh-command-goal`'s own
+ * `parseGoalCommand` does — bare `/goal` shows the current goal, the control words
+ * `clear`/`pause`/`resume` (case-insensitive) mutate it, `edit <objective>` replaces
+ * the objective (bare `edit` is an error), and any other text is a create objective.
+ * @param text - Raw submitted line.
+ * @returns The parsed command, or `undefined` when `text` isn't a `/goal` invocation.
+ */
+export function parseGoalCommand(text: string): GoalCommand | undefined {
+  const trimmed = text.trim()
+  if (!GOAL_COMMAND.test(trimmed)) return undefined
+  const input = trimmed.slice('/goal'.length).trim()
+  if (input.length === 0) return { kind: 'show' }
+  const control = input.toLowerCase()
+  if (control === 'clear') return { kind: 'clear' }
+  if (control === 'pause') return { kind: 'pause' }
+  if (control === 'resume') return { kind: 'resume' }
+  if (control === 'edit') return { kind: 'invalid-edit' }
+  if (/^edit(?=\s)/iu.test(input)) return { kind: 'edit', objective: input.slice(4).trim() }
+  return { kind: 'create', objective: input }
 }
 
 export function runSlashCommand(command: string, actions: TuiActions): void {

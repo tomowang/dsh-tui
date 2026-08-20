@@ -8,6 +8,7 @@
  */
 
 import type { AgentStatus } from '@deepseek-ai/dsh-agent'
+import type { GoalProjection } from '@deepseek-ai/dsh-goal'
 import { BlockAssembler } from '@deepseek-ai/dsh-llm'
 import type { CallId, StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent, UserMessage } from '@deepseek-ai/dsh-session'
@@ -146,6 +147,8 @@ export interface TuiState {
   readonly overlay: Overlay
   /** Current permission preset, or `undefined` when `ctx.permissionPresets` isn't composed in this profile. */
   readonly permission: PermissionState | undefined
+  /** The session's current goal (the 'goal' session projection: whole value, or `null` before the first create / after a clear tombstone), or `undefined` when the projection unit isn't composed in this profile. */
+  readonly goal: GoalProjection | null | undefined
   /** Whole-log stats-line figures, or `undefined` sides when `ctx.sessionProjections` isn't composed in this profile. */
   readonly stats: StatsSnapshot
   /** Current agent preset, or `undefined` when `ctx.agentPresets` isn't composed in this profile. */
@@ -216,6 +219,7 @@ export class TuiStore {
       notice: undefined,
       overlay: CLOSED_OVERLAY,
       permission: undefined,
+      goal: undefined,
       stats: EMPTY_STATS,
       preset: undefined,
       streaming: undefined,
@@ -299,6 +303,11 @@ export class TuiStore {
 
   setPermission(permission: PermissionState | undefined): void {
     this.set({ permission })
+  }
+
+  /** Refresh the session's current goal from the 'goal' session projection; `undefined` when the projection unit isn't composed, `null` before the first create or after a clear. */
+  setGoal(goal: GoalProjection | null | undefined): void {
+    this.set({ goal })
   }
 
   setStats(stats: StatsSnapshot): void {

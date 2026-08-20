@@ -21,7 +21,7 @@
 import type { AgentStatus } from '@deepseek-ai/dsh-agent'
 import { Editor, Key, matchesKey, type TUI } from '@earendil-works/pi-tui'
 import type { TuiActions } from './actions.js'
-import { matchSlashCommands, parsePlanCommand, runSlashCommand } from './commands.js'
+import { matchSlashCommands, parseGoalCommand, parsePlanCommand, runSlashCommand } from './commands.js'
 import { editorTheme, shellModeEditorBorderColor } from './piTheme.js'
 import { PromptAutocompleteProvider, type GetFileCandidates } from './promptAutocomplete.js'
 import { theme, fg } from './theme.js'
@@ -61,8 +61,11 @@ export class CustomEditor extends Editor {
     // builds a fresh editor — are navigable from the first keystroke, not
     // only ones submitted through this instance. `addToHistory` unshifts, so
     // the resulting order is newest-first exactly as `navigateHistory`
-    // expects, with its own dedupe and 100-entry cap applied.
-    for (const line of deps.history) this.addToHistory(line)
+    // expects, with its own dedupe and 100-entry cap applied — pre-sliced to
+    // the newest 100 here too, so an install with years of persisted history
+    // doesn't pay O(persisted-count) unshift work on every construction just
+    // to end up keeping the same last 100 entries.
+    for (const line of deps.history.slice(-100)) this.addToHistory(line)
   }
 
   private armOrConfirmExit(key: 'c' | 'd'): void {
@@ -112,6 +115,14 @@ export class CustomEditor extends Editor {
     const planArgs = parsePlanCommand(trimmed)
     if (planArgs !== undefined) {
       this.actions.plan(planArgs)
+      return
+    }
+    // `/goal` takes a free-text objective (or a control word), so it shares
+    // `/plan`'s parse-ahead shape — a bare `/goal` routes here too, ahead of
+    // the whitespace-free matcher.
+    const goalCommand = parseGoalCommand(trimmed)
+    if (goalCommand !== undefined) {
+      this.actions.goal(goalCommand)
       return
     }
     const matches = trimmed.startsWith('/') && !/\s/.test(trimmed) ? matchSlashCommands(trimmed) : []

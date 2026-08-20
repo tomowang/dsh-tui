@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { TuiActions } from '../../src/tui/actions.js'
-import { matchSlashCommands, parsePlanCommand, runSlashCommand } from '../../src/tui/commands.js'
+import { matchSlashCommands, parseGoalCommand, parsePlanCommand, runSlashCommand } from '../../src/tui/commands.js'
 
 function stubActions(): TuiActions {
   return {
@@ -13,6 +13,7 @@ function stubActions(): TuiActions {
     cyclePermission: vi.fn(),
     compact: vi.fn(),
     plan: vi.fn(),
+    goal: vi.fn(),
     ensureFileIndex: vi.fn(),
     openModelProfile: vi.fn(),
     closeModelProfile: vi.fn(),
@@ -97,6 +98,50 @@ describe('parsePlanCommand', () => {
   })
 })
 
+describe('parseGoalCommand', () => {
+  it('parses bare /goal as show', () => {
+    expect(parseGoalCommand('/goal')).toEqual({ kind: 'show' })
+  })
+
+  it('trims surrounding whitespace off the bare command', () => {
+    expect(parseGoalCommand('  /goal  ')).toEqual({ kind: 'show' })
+  })
+
+  it('parses any other text as a create objective, trimmed', () => {
+    expect(parseGoalCommand('/goal ship the release ')).toEqual({ kind: 'create', objective: 'ship the release' })
+  })
+
+  it('parses the control words clear/pause/resume', () => {
+    expect(parseGoalCommand('/goal clear')).toEqual({ kind: 'clear' })
+    expect(parseGoalCommand('/goal pause')).toEqual({ kind: 'pause' })
+    expect(parseGoalCommand('/goal resume')).toEqual({ kind: 'resume' })
+  })
+
+  it('is case-insensitive for the control words', () => {
+    expect(parseGoalCommand('/goal CLEAR')).toEqual({ kind: 'clear' })
+    expect(parseGoalCommand('/goal Pause')).toEqual({ kind: 'pause' })
+    expect(parseGoalCommand('/goal RESUME')).toEqual({ kind: 'resume' })
+  })
+
+  it('treats bare edit as invalid-edit', () => {
+    expect(parseGoalCommand('/goal edit')).toEqual({ kind: 'invalid-edit' })
+  })
+
+  it('parses "edit <objective>" as an edit, case-insensitively', () => {
+    expect(parseGoalCommand('/goal edit ship the docs')).toEqual({ kind: 'edit', objective: 'ship the docs' })
+    expect(parseGoalCommand('/goal EDIT ship the docs')).toEqual({ kind: 'edit', objective: 'ship the docs' })
+  })
+
+  it('does not match a longer command sharing the /goal prefix', () => {
+    expect(parseGoalCommand('/goals')).toBeUndefined()
+  })
+
+  it('does not match plain text or another command', () => {
+    expect(parseGoalCommand('not a command')).toBeUndefined()
+    expect(parseGoalCommand('/plan off')).toBeUndefined()
+  })
+})
+
 describe('runSlashCommand', () => {
   it('dispatches /exit to shutdown', () => {
     const actions = stubActions()
@@ -177,6 +222,12 @@ describe('runSlashCommand', () => {
   it('does not dispatch /plan — CustomEditor routes it through parsePlanCommand/actions.plan instead', () => {
     const actions = stubActions()
     runSlashCommand('/plan', actions)
+    expect(totalCalls(actions)).toBe(0)
+  })
+
+  it('does not dispatch /goal — CustomEditor routes it through parseGoalCommand/actions.goal instead', () => {
+    const actions = stubActions()
+    runSlashCommand('/goal', actions)
     expect(totalCalls(actions)).toBe(0)
   })
 })

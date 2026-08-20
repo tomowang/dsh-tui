@@ -109,6 +109,19 @@ describe('formatEvent — user/message', () => {
     expect(line).toContain('⊕ context ›')
     expect(line).toContain('tool')
   })
+
+  it('collapses a goal continuation round to a label naming its round', () => {
+    const line = formatEvent(
+      event('user/message', {
+        source: { kind: 'goal', goalId: 'goal-1', revision: 1, round: 3 },
+        content: [{ type: 'text', text: '<goal_round>…' }],
+      }),
+      { replay: false },
+    )
+    expect(line).toContain('⊕ goal ›')
+    expect(line).toContain('round 3')
+    expect(line).not.toContain('<goal_round>')
+  })
 })
 
 describe('formatEvent — assistant/message', () => {
@@ -624,6 +637,74 @@ describe('formatEvent — compaction/end', () => {
     const line = formatEvent(event('compaction/end', { error: 'commit failed' }), { replay: false })
     expect(line).toContain('compaction')
     expect(line).toContain('commit failed')
+  })
+})
+
+describe('formatEvent — goal/change', () => {
+  /** A snapshot goal-change fixture carrying the minimal whole-value fields the renderer reads. */
+  function snapshotChange(operation: string, objective = 'ship it'): SessionEvent {
+    return event('goal/change', {
+      kind: 'goal/change',
+      version: 1,
+      operation,
+      goal: {
+        id: 'goal-1',
+        revision: 1,
+        objective,
+        phase: operation === 'block' ? 'blocked' : operation === 'complete' ? 'complete' : 'active',
+        maxGoalRounds: 256,
+      },
+      roundsStarted: 0,
+      createdAt: 1,
+      updatedAt: 1,
+    })
+  }
+
+  it('renders a clear tombstone', () => {
+    const line = formatEvent(
+      event('goal/change', { kind: 'goal/change', version: 1, operation: 'clear', cleared: { id: 'goal-1', revision: 2 }, clearedAt: 2 }),
+      { replay: false },
+    )
+    expect(line).toContain('goal cleared')
+  })
+
+  it('renders create and edit with the objective', () => {
+    expect(formatEvent(snapshotChange('create'), { replay: false })).toContain('goal set: ship it')
+    expect(formatEvent(snapshotChange('edit', 'ship the docs'), { replay: false })).toContain('goal updated: ship the docs')
+  })
+
+  it('renders pause, resume, and complete', () => {
+    expect(formatEvent(snapshotChange('pause'), { replay: false })).toContain('goal paused')
+    expect(formatEvent(snapshotChange('resume'), { replay: false })).toContain('goal resumed')
+    expect(formatEvent(snapshotChange('complete'), { replay: false })).toContain('goal complete')
+  })
+
+  it('renders a block with its reason when present', () => {
+    const blocked = event('goal/change', {
+      kind: 'goal/change',
+      version: 1,
+      operation: 'block',
+      goal: {
+        id: 'goal-1',
+        revision: 2,
+        objective: 'ship it',
+        phase: 'blocked',
+        blockedReason: { code: 'round-limit', message: 'Goal reached its configured limit of 256 rounds.' },
+        maxGoalRounds: 256,
+      },
+      roundsStarted: 256,
+      createdAt: 1,
+      updatedAt: 2,
+    })
+    const line = formatEvent(blocked, { replay: false })
+    expect(line).toContain('goal blocked')
+    expect(line).toContain('round-limit')
+    expect(line).toContain('configured limit')
+  })
+
+  it('renders a block without a reason too', () => {
+    const line = formatEvent(snapshotChange('block'), { replay: false })
+    expect(line).toContain('goal blocked')
   })
 })
 
