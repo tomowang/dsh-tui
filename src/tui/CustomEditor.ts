@@ -56,6 +56,13 @@ export class CustomEditor extends Editor {
     super(tui, editorTheme, { paddingX: 2 })
     this.setAutocompleteProvider(new PromptAutocompleteProvider(deps.getFileCandidates))
     this.onSubmit = (text) => this.handleSubmit(text)
+    // Seed up/down-arrow recall with the persisted history (oldest first) so
+    // prompts from earlier runs — and from before a `/clear` remount, which
+    // builds a fresh editor — are navigable from the first keystroke, not
+    // only ones submitted through this instance. `addToHistory` unshifts, so
+    // the resulting order is newest-first exactly as `navigateHistory`
+    // expects, with its own dedupe and 100-entry cap applied.
+    for (const line of deps.history) this.addToHistory(line)
   }
 
   private armOrConfirmExit(key: 'c' | 'd'): void {

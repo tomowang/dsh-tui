@@ -1,4 +1,7 @@
 node_modules/
+# pnpm content-addressable store when created inside the project (e.g. a
+# one-off `--store-dir .pnpm-store` install) — regenerable, machine-local.
+.pnpm-store/
 lib/
 *.tsbuildinfo
 .env
