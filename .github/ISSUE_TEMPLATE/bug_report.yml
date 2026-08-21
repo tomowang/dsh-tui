@@ -1,0 +1,58 @@
+name: Bug report
+description: Something in the TUI isn't working as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Please fill out as much detail as you can — terminal apps are hard to debug from a one-line description alone.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug, and what you expected to happen instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Commands run, keys pressed, slash commands used, etc.
+      placeholder: |
+        1. `dsh --profile tui`
+        2. Type `/model` and select ...
+        3. Press ...
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: dsh-tui version
+      description: Output of `dsh --profile tui --dump-config` or the version in `package.json` of your profile's dependency.
+      placeholder: "0.6.0"
+    validations:
+      required: true
+
+  - type: input
+    id: terminal
+    attributes:
+      label: Terminal / OS
+      description: e.g. iTerm2 on macOS 14, Windows Terminal on Windows 11, GNOME Terminal on Ubuntu 24.04
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant output or screenshot
+      description: If the terminal rendering is broken, a screenshot or asciinema recording is very helpful. Paste any error output as text (not a screenshot) where possible.
+      render: shell
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Anything else that might be relevant — session was resumed with `--resume`, a specific model profile, etc.

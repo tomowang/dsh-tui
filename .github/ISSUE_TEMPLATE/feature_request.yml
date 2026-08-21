@@ -1,0 +1,35 @@
+name: Feature request
+description: Suggest a new command, keybinding, overlay, or other user-visible behavior
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the suggestion. Note that `dsh-tui` owns terminal input/presentation only — agent lifecycle, session persistence, tool execution, and model policy live in `dsh-base`. If your request is about agent behavior rather than the terminal UI, it likely belongs in that repo instead.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: What are you trying to do that the TUI doesn't support today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: A new slash command, keybinding, overlay, or other behavior. Mockups/ASCII sketches welcome.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Any workarounds you're using today, or other approaches you considered.
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
