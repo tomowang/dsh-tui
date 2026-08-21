@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { GoalProjection } from '@deepseek-ai/dsh-goal'
-import { buildGoalBarText } from '../../src/tui/liveText.js'
+import { buildGoalBarText, buildUpdateHintText } from '../../src/tui/liveText.js'
 
 /** A minimal 'goal' projection fixture; only the fields the strip reads are meaningful. */
 function projection(over: Partial<GoalProjection['goal']> = {}): GoalProjection {
@@ -55,5 +55,18 @@ describe('buildGoalBarText', () => {
     expect(text).toContain('…')
     // '🎯 active · ' prefix + the 80-char truncated objective, plus ANSI codes.
     expect(text.length).toBeLessThan(200)
+  })
+})
+
+describe('buildUpdateHintText', () => {
+  it('renders nothing while unchecked or already current', () => {
+    expect(buildUpdateHintText('0.6.0', undefined)).toBe('')
+  })
+
+  it('shows the current and newer version plus the upgrade command once one is found', () => {
+    const text = buildUpdateHintText('0.6.0', '0.7.0')
+    expect(text).toContain('0.6.0')
+    expect(text).toContain('0.7.0')
+    expect(text).toContain('dsh plugin --profile tui add @tomowang/dsh-tui')
   })
 })

@@ -8,9 +8,17 @@
 
 import { readFileSync } from 'node:fs'
 
+function readPackageJson(): { name: string; version: string } {
+  const url = new URL('../package.json', import.meta.url)
+  return JSON.parse(readFileSync(url, 'utf8')) as { name: string; version: string }
+}
+
 /** @returns the version field from this package's `package.json`. */
 export function readPackageVersion(): string {
-  const url = new URL('../package.json', import.meta.url)
-  const pkg = JSON.parse(readFileSync(url, 'utf8')) as { version: string }
-  return pkg.version
+  return readPackageJson().version
+}
+
+/** @returns the name field from this package's `package.json` (its npm registry identity, e.g. for an update check). */
+export function readPackageName(): string {
+  return readPackageJson().name
 }

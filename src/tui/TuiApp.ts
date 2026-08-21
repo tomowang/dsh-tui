@@ -7,7 +7,7 @@
  * Two different update strategies are used, deliberately:
  *
  * - The live region (notice, queued preview, streaming text, status bar,
- *   stats line, permission indicator) is a `DynamicText`/`Spinner` per row,
+ *   stats line, permission indicator, update hint) is a `DynamicText`/`Spinner` per row,
  *   each pulling straight from `store.getSnapshot()` at render time. There is
  *   no manual `setText` bookkeeping to keep in sync — every repaint just
  *   reflects whatever the store currently holds. The approve/reject panel
@@ -48,7 +48,7 @@ import type { RenderOptions } from '../render.js'
 import { formatEvent, formatPendingToolCalls, formatShellRun, formatShellRunLive, formatStreamingText } from '../render.js'
 import { buildBannerText } from './bannerText.js'
 import { buildContextLine, buildStatsLine } from './statsFormat.js'
-import { buildGoalBarText, buildPermissionText, buildQueuedText, buildStatusBarText } from './liveText.js'
+import { buildGoalBarText, buildPermissionText, buildQueuedText, buildStatusBarText, buildUpdateHintText } from './liveText.js'
 import { createTranscriptLine, DynamicText, padTranscriptText } from './text.js'
 import { CustomEditor } from './CustomEditor.js'
 import { Spinner } from './Spinner.js'
@@ -281,6 +281,7 @@ class TuiApp implements TuiHandle {
       })
     })
     const permissionText = new DynamicText(() => buildPermissionText(store.getSnapshot().permission))
+    const updateHintText = new DynamicText(() => buildUpdateHintText(options.version, store.getSnapshot().updateHint))
     const statsLineText = new DynamicText(() => {
       const stats = store.getSnapshot().stats
       const line = buildStatsLine(stats.sessionStats, stats.tokenUsage)
@@ -300,6 +301,7 @@ class TuiApp implements TuiHandle {
         this.approvalSlot,
         this.editor,
         permissionText,
+        updateHintText,
         statsLineText,
       ],
       { gap: 0 },

@@ -39,6 +39,7 @@ An open-source terminal front door for [DeepSeek Harness](https://github.com/dee
 - **Readline-style input** — word/line motion, kill/yank-style deletes, multi-line drafts, and shell-like double-press `Ctrl+C`/`Ctrl+D` to exit.
 - **Shell mode** — a leading `!` on an empty prompt (Claude Code's convention) switches Enter to run the line as a local shell command instead of sending it to the agent; the prompt border turns yellow for the duration, and output streams into the transcript without touching the session log.
 - **`@`-file-mention autocomplete** — typing `@` opens a fuzzy-filtered dropdown of repo files (`git ls-files`, or a bounded walk outside a git repo); `Tab`/`Enter` inserts the picked path at the cursor.
+- **Update hint** — a best-effort startup check against the npm registry shows a persistent dock line with the upgrade command once a newer `@tomowang/dsh-tui` is published; any network failure or timeout is silent.
 - **Full-screen scrollable transcript** — the interface owns the terminal's alternate screen buffer rather than growing native scrollback, with mouse wheel/trackpad and `PageUp`/`PageDown` scrolling and an auto-follow-the-bottom transcript; the last screenful is flattened back into your terminal's normal scrollback on exit. `/trajectory` remains the tool for browsing further back than the viewport shows.
 - Every overlay degrades to a plain notice instead of failing the whole TUI when its backing service isn't mounted in a given profile.
 

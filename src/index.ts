@@ -62,7 +62,8 @@ import type { ModelProfileOverlayState, PermissionState, PresetState, StatsSnaps
 import { mountTui, restoreActiveTerminal, type TuiHandle } from './tui/TuiApp.js'
 import { loadFileIndex } from './tui/fileIndex.js'
 import type { TuiActions } from './tui/actions.js'
-import { readPackageVersion } from './version.js'
+import { readPackageName, readPackageVersion } from './version.js'
+import { checkForUpdate } from './updateCheck.js'
 import type { ProviderDraft, ProviderRow, StoredProviderProfile } from './tui/modelProfile/types.js'
 import type { PluginRow } from './tui/plugins/types.js'
 import type { AgentPresetRow } from './tui/agentPresets/types.js'
@@ -1222,6 +1223,15 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
   }
 
   let current = await attachSession(config.resume)
+
+  // Fire-and-forget, once per process (not re-run on `/clear`): routes
+  // through whichever session's store is current when the registry check
+  // resolves, the same "current" closure pattern the approval/question
+  // answerers use, so a `/clear` mid-check still lands the hint on screen.
+  void checkForUpdate(readPackageName(), readPackageVersion())
+    .then(latest => {
+      if (latest !== undefined) current.store.setUpdateHint(latest)
+    })
 
   async function shutdown(): Promise<void> {
     if (current.closing) return

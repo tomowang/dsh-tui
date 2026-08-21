@@ -257,6 +257,17 @@ describe('TuiStore setters without an equality guard', () => {
     store.setPreset({ current: 'Code mode', blank: true })
     expect(store.getSnapshot().preset).toEqual({ current: 'Code mode', blank: true })
   })
+
+  it('setUpdateHint starts undefined and stores the newer version found by the startup check', () => {
+    const store = new TuiStore({ events: [] })
+    expect(store.getSnapshot().updateHint).toBeUndefined()
+
+    store.setUpdateHint('0.7.0')
+    expect(store.getSnapshot().updateHint).toBe('0.7.0')
+
+    store.setUpdateHint(undefined)
+    expect(store.getSnapshot().updateHint).toBeUndefined()
+  })
 })
 
 describe('TuiStore shell runs', () => {

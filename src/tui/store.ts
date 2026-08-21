@@ -163,6 +163,8 @@ export interface TuiState {
   readonly shellHistory: readonly ShellRunRecord[]
   /** Repo-relative file paths backing the `@`-mention dropdown; `undefined` until the first mention triggers a load. */
   readonly fileIndex: FileIndexState
+  /** A newer npm-published version of this package, once the startup registry check (`src/updateCheck.ts`) resolves one; `undefined` while unchecked or already current. */
+  readonly updateHint: string | undefined
 }
 
 /** The `@`-mention dropdown's backing file list, loaded lazily on first use (see `ensureFileIndex` in `src/index.ts`). */
@@ -227,6 +229,7 @@ export class TuiStore {
       shellRun: undefined,
       shellHistory: [],
       fileIndex: EMPTY_FILE_INDEX,
+      updateHint: undefined,
     }
   }
 
@@ -437,6 +440,11 @@ export class TuiStore {
   /** Settle the `@`-mention file index once `loadFileIndex` resolves. */
   setFileIndex(candidates: readonly string[]): void {
     this.set({ fileIndex: { candidates, loading: false } })
+  }
+
+  /** Record a newer npm-published version found by the startup update check; persists for the session (not cleared by `/clear`'s notice reset) until dismissed by a fresh check finding none. */
+  setUpdateHint(version: string | undefined): void {
+    this.set({ updateHint: version })
   }
 
   private set(partial: Partial<TuiState>): void {

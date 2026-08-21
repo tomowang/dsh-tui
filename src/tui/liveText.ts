@@ -19,6 +19,7 @@ import { theme, fg } from './theme.js'
 
 const dim = fg(theme.muted)
 const accent = fg(theme.accent)
+const warning = fg(theme.warning)
 
 export interface StatusBarParams {
   readonly sessionId: string
@@ -78,6 +79,20 @@ const PERMISSION_COLORS: Record<string, string> = {
   'workspace-write': theme.success,
   'danger-full-access': theme.error,
   custom: theme.muted,
+}
+
+/**
+ * Persistent low-key dock row nudging the reader to upgrade once the
+ * startup registry check (`src/updateCheck.ts`) finds a newer published
+ * version; renders nothing while unchecked or already current. Unlike
+ * `notice`, this isn't cleared on the next input — it's meant to stay
+ * visible for the rest of the session, mirroring how `gh`/`npm` surface an
+ * available-update line.
+ */
+export function buildUpdateHintText(currentVersion: string, latestVersion: string | undefined): string {
+  if (latestVersion === undefined) return ''
+  return warning(`⬆ dsh-tui update available: v${currentVersion} → v${latestVersion}`) +
+    dim(' (run `dsh plugin --profile tui add @tomowang/dsh-tui` to upgrade)')
 }
 
 export function buildPermissionText(permission: PermissionState | undefined): string {
