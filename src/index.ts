@@ -52,6 +52,9 @@ import type {} from '@deepseek-ai/dsh-sandbox-policy'
 // SessionProjectionMap entries for the status bar's stats line.
 import type { SessionProjectionMap } from '@deepseek-ai/dsh-session-projection'
 import type {} from '@deepseek-ai/dsh-session-stats'
+// Type-only: resolves the 'title' SessionProjectionMap entry the terminal
+// title (`TuiApp`'s `updateTerminalTitle`) reads.
+import type {} from '@deepseek-ai/dsh-session-title'
 import type {} from '@deepseek-ai/dsh-token-meter'
 
 import { ensureSessionIdPrefix, stripSessionIdPrefix } from './sessionId.js'
@@ -369,6 +372,11 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
   /** The session's current goal projection (the 'goal' key), or `undefined` without a mounted registry/unit. */
   function goalSnapshot(values: Partial<SessionProjectionMap> | undefined): GoalProjection | null | undefined {
     return values?.goal
+  }
+
+  /** The session's current title (the 'title' key), or `undefined` without a mounted registry/unit (`@deepseek-ai/dsh-session-title` not composed in this profile). */
+  function titleSnapshot(values: Partial<SessionProjectionMap> | undefined): string | null | undefined {
+    return values?.title
   }
 
   /** The session's current agent preset, or `undefined` without a mounted service. */
@@ -801,6 +809,7 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
     const initialProjection = projectionValues(agent.session)
     store.setStats(statsSnapshot(initialProjection))
     store.setGoal(goalSnapshot(initialProjection))
+    store.setTitle(titleSnapshot(initialProjection))
     store.setPreset(currentPresetState(agent.session))
     if (presetNotice !== undefined) store.setNotice(presetNotice)
 
@@ -843,6 +852,10 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
         if (session !== agent.session) return
         if (key === 'goal') {
           store.setGoal(goalSnapshot(projectionValues(agent.session)))
+          return
+        }
+        if (key === 'title') {
+          store.setTitle(titleSnapshot(projectionValues(agent.session)))
           return
         }
         if (key !== 'sessionStats' && key !== 'tokenUsage' && key !== 'contextPressure' && key !== 'contextBreakdown') return

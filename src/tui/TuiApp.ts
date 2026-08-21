@@ -48,7 +48,7 @@ import type { RenderOptions } from '../render.js'
 import { formatEvent, formatPendingToolCalls, formatShellRun, formatShellRunLive, formatStreamingText } from '../render.js'
 import { buildBannerText } from './bannerText.js'
 import { buildContextLine, buildStatsLine } from './statsFormat.js'
-import { buildGoalBarText, buildPermissionText, buildQueuedText, buildStatusBarText, buildUpdateHintText } from './liveText.js'
+import { buildGoalBarText, buildPermissionText, buildQueuedText, buildStatusBarText, buildTerminalTitle, buildUpdateHintText } from './liveText.js'
 import { createTranscriptLine, DynamicText, padTranscriptText } from './text.js'
 import { CustomEditor } from './CustomEditor.js'
 import { Spinner } from './Spinner.js'
@@ -224,6 +224,8 @@ class TuiApp implements TuiHandle {
   private readonly approvalSlot = new ApprovalSlot()
   private wasRunning = false
   private stopped = false
+  /** Last title string sent to the terminal, so an unrelated store change doesn't re-issue the same OSC 0 write every render. */
+  private lastTerminalTitle: string | undefined
 
   constructor(private readonly options: MountOptions) {
     const { store, actions } = options
@@ -317,10 +319,12 @@ class TuiApp implements TuiHandle {
     this.tui.setFocus(this.editor)
 
     this.appendNewTranscriptItems(store.getSnapshot())
+    this.updateTerminalTitle(store.getSnapshot().title)
     store.subscribe(() => {
       const state = store.getSnapshot()
       this.appendNewTranscriptItems(state)
       this.updateOverlay(state.overlay)
+      this.updateTerminalTitle(state.title)
       const running = state.status === 'running'
       if (running !== this.wasRunning) {
         this.wasRunning = running
@@ -329,6 +333,14 @@ class TuiApp implements TuiHandle {
       }
       this.tui.requestRender()
     })
+  }
+
+  /** Push the terminal window/tab title (OSC 0) when the session's title projection changes; a no-op once already reflecting the current value. */
+  private updateTerminalTitle(title: string | null | undefined): void {
+    const text = buildTerminalTitle(title)
+    if (text === this.lastTerminalTitle) return
+    this.lastTerminalTitle = text
+    this.tui.terminal.setTitle(text)
   }
 
   start(): void {

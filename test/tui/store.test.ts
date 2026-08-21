@@ -252,6 +252,17 @@ describe('TuiStore setters without an equality guard', () => {
     expect(store.getSnapshot().goal).toBeNull()
   })
 
+  it('setTitle starts undefined and stores the title, null included', () => {
+    const store = new TuiStore({ events: [] })
+    expect(store.getSnapshot().title).toBeUndefined()
+
+    store.setTitle('Read-only agent preset creation')
+    expect(store.getSnapshot().title).toBe('Read-only agent preset creation')
+
+    store.setTitle(null)
+    expect(store.getSnapshot().title).toBeNull()
+  })
+
   it('setPreset updates the field and notifies', () => {
     const store = new TuiStore({ events: [] })
     store.setPreset({ current: 'Code mode', blank: true })

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { GoalProjection } from '@deepseek-ai/dsh-goal'
-import { buildGoalBarText, buildUpdateHintText } from '../../src/tui/liveText.js'
+import { buildGoalBarText, buildTerminalTitle, buildUpdateHintText } from '../../src/tui/liveText.js'
 
 /** A minimal 'goal' projection fixture; only the fields the strip reads are meaningful. */
 function projection(over: Partial<GoalProjection['goal']> = {}): GoalProjection {
@@ -55,6 +55,17 @@ describe('buildGoalBarText', () => {
     expect(text).toContain('…')
     // '🎯 active · ' prefix + the 80-char truncated objective, plus ANSI codes.
     expect(text.length).toBeLessThan(200)
+  })
+})
+
+describe('buildTerminalTitle', () => {
+  it('falls back to the bare product name while loading or without the session-title service composed', () => {
+    expect(buildTerminalTitle(undefined)).toBe('dsh-tui')
+    expect(buildTerminalTitle(null)).toBe('dsh-tui')
+  })
+
+  it('suffixes the accepted session title with the product name', () => {
+    expect(buildTerminalTitle('Read-only agent preset creation')).toBe('Read-only agent preset creation — dsh-tui')
   })
 })
 

@@ -132,6 +132,18 @@ const GOAL_OBJECTIVE_LIMIT = 80
  * goal (the portal shows it as a hover tooltip, which a terminal cannot).
  * Mutations live on the `/goal` command, not on the strip.
  */
+/**
+ * Terminal window/tab title: `<session title> — dsh-tui` once the optional
+ * `dsh-session-title` service has accepted one for this session, or just
+ * `dsh-tui` before that (loading) or without the service composed —
+ * mirroring the harness's own `<session title> — <configured title>` OSC 0
+ * convention. Plain text, never ANSI-colored: an OSC 0 title string is
+ * displayed verbatim by the terminal chrome, not interpreted as SGR.
+ */
+export function buildTerminalTitle(title: string | null | undefined): string {
+  return title === null || title === undefined ? 'dsh-tui' : `${title} — dsh-tui`
+}
+
 export function buildGoalBarText(goal: GoalProjection | null | undefined): string {
   if (goal === undefined || goal === null || goal.goal.phase === 'complete') return ''
   const snapshot = goal.goal

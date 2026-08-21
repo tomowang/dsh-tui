@@ -149,6 +149,8 @@ export interface TuiState {
   readonly permission: PermissionState | undefined
   /** The session's current goal (the 'goal' session projection: whole value, or `null` before the first create / after a clear tombstone), or `undefined` when the projection unit isn't composed in this profile. */
   readonly goal: GoalProjection | null | undefined
+  /** The session's current title (the 'title' session projection: last-wins `session/title` text, or `null` before the first one lands), or `undefined` when `dsh-session-title` isn't composed in this profile. Drives the terminal window/tab title — see `TuiApp`'s `updateTerminalTitle`. */
+  readonly title: string | null | undefined
   /** Whole-log stats-line figures, or `undefined` sides when `ctx.sessionProjections` isn't composed in this profile. */
   readonly stats: StatsSnapshot
   /** Current agent preset, or `undefined` when `ctx.agentPresets` isn't composed in this profile. */
@@ -222,6 +224,7 @@ export class TuiStore {
       overlay: CLOSED_OVERLAY,
       permission: undefined,
       goal: undefined,
+      title: undefined,
       stats: EMPTY_STATS,
       preset: undefined,
       streaming: undefined,
@@ -311,6 +314,11 @@ export class TuiStore {
   /** Refresh the session's current goal from the 'goal' session projection; `undefined` when the projection unit isn't composed, `null` before the first create or after a clear. */
   setGoal(goal: GoalProjection | null | undefined): void {
     this.set({ goal })
+  }
+
+  /** Refresh the session's current title from the 'title' session projection; `undefined` when `dsh-session-title` isn't composed, `null` before the first accepted title. */
+  setTitle(title: string | null | undefined): void {
+    this.set({ title })
   }
 
   setStats(stats: StatsSnapshot): void {
