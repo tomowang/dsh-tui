@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.7.0] - 2026-08-24
+
+### Chores
+
+- *(repo)* Add GitHub issue templates
+- *(deps)* Upgrade @deepseek-ai/dsh-* packages to 0.1.1-rc.2
+
+### Features
+
+- *(tui)* Show a startup hint when a newer version is published
+- *(tui)* Set the terminal window title from the session title
+- *(tui)* Notify via OSC 9 when waiting on approval or a question
+
 ## [0.6.0] - 2026-08-20
 
 ### Bug Fixes
