@@ -414,6 +414,14 @@ class TuiApp implements TuiHandle {
     if (overlay.kind === this.currentOverlayKind) return
     const previousKind = this.currentOverlayKind
     this.currentOverlayKind = overlay.kind
+    if ((overlay.kind === 'approval' || overlay.kind === 'userQuestion') && previousKind !== 'approval' && previousKind !== 'userQuestion') {
+      // OSC 9 desktop notification — same mechanism Claude Code's own CLI
+      // uses; Ghostty/Kitty/iTerm2 forward it straight to the OS
+      // notification center, and a terminal without OSC 9 support just
+      // ignores the unrecognized sequence (no fallback needed).
+      const message = overlay.kind === 'approval' ? 'dsh-tui is waiting for your approval' : 'dsh-tui is waiting for your answer'
+      this.tui.terminal.write(`\x1b]9;${message}\x07`)
+    }
     if (previousKind === 'approval') this.approvalSlot.set(undefined)
     if (this.overlayHandle !== undefined) {
       this.overlayHandle.hide()
