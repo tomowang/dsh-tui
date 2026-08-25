@@ -52,9 +52,10 @@ import type {} from '@deepseek-ai/dsh-sandbox-policy'
 // SessionProjectionMap entries for the status bar's stats line.
 import type { SessionProjectionMap } from '@deepseek-ai/dsh-session-projection'
 import type {} from '@deepseek-ai/dsh-session-stats'
-// Type-only: resolves the 'title' SessionProjectionMap entry the terminal
-// title (`TuiApp`'s `updateTerminalTitle`) reads.
-import type {} from '@deepseek-ai/dsh-session-title'
+// Resolves the 'title' SessionProjectionMap entry the terminal title
+// (`TuiApp`'s `updateTerminalTitle`) reads, and `/rename`'s empty-title
+// rejection.
+import { SessionTitleInvalidError } from '@deepseek-ai/dsh-session-title'
 import type {} from '@deepseek-ai/dsh-token-meter'
 
 import { ensureSessionIdPrefix, stripSessionIdPrefix } from './sessionId.js'
@@ -293,6 +294,10 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
   // reader /goal is unavailable and hides the goal strip instead of refusing
   // to start.
   const goals = ctx.get('goals')
+  // Same optional-service pattern: a profile without the session-title
+  // service just tells the reader /rename is unavailable instead of
+  // refusing to start.
+  const sessionTitle = ctx.get('sessionTitle')
   // Same optional-service pattern: a profile without a mounted agent-preset
   // roster just shows no preset in the status bar and tells the reader
   // /presets is unavailable instead of refusing to start.
@@ -566,7 +571,7 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
     }
   }
 
-  /** One live agent/session/UI wiring; replaced wholesale by `clearSession()`. */
+  /** One live agent/session/UI wiring; replaced wholesale by `clearSession()`/`resumeSession()`. */
   interface CurrentSession {
     readonly agent: Agent
     readonly store: TuiStore
@@ -922,6 +927,14 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
       clear() {
         void clearSession()
       },
+      resume(sessionId) {
+        const trimmedId = sessionId.trim()
+        if (trimmedId === '') {
+          store.setNotice('Usage: /resume <sessionId>')
+          return
+        }
+        void resumeSession(trimmedId)
+      },
       cyclePermission() {
         if (permissionPresets === undefined) {
           store.setNotice('permission presets are not available in this profile')
@@ -955,6 +968,29 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
             store.setNotice(`compaction failed: ${message}`)
           })
           .finally(() => { compacting = false })
+      },
+      rename(title) {
+        if (sessionTitle === undefined) {
+          store.setNotice('rename is not available in this profile')
+          return
+        }
+        const trimmedTitle = title.trim()
+        if (trimmedTitle === '') {
+          store.setNotice('Usage: /rename <title>')
+          return
+        }
+        try {
+          const accepted = sessionTitle.rename(agent.session, trimmedTitle)
+          // No manual store.setTitle here: the sessionProjections 'title'
+          // listener wired in attachSession picks up the session/title event
+          // this just appended and updates the store reactively.
+          store.setNotice(`Renamed to "${accepted.title}".`)
+        } catch (error) {
+          const message = error instanceof SessionTitleInvalidError
+            ? 'title must contain visible characters'
+            : error instanceof Error ? error.message : String(error)
+          store.setNotice(`rename failed: ${message}`)
+        }
       },
       // Mirrors `@deepseek-ai/dsh-plan-mode`'s own `/plan` command handler
       // (its result text is model-facing there; reused here as the notice).
@@ -1257,10 +1293,12 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
     io.exit(0)
   }
 
-  /** Flush and drop the live session, then attach a brand-new one in a freshly cleared screen. */
-  async function clearSession(): Promise<void> {
-    if (current.closing) return
-    const old = current
+  /**
+   * Flush and tear down `old`'s agent/store/Ink tree so a new one can take
+   * over the terminal. Shared by `clearSession` and `resumeSession`, which
+   * differ only in what they attach afterward.
+   */
+  async function detachSession(old: CurrentSession): Promise<void> {
     old.closing = true
     old.agent.cancel({ kind: 'user' })
     await old.agent.whenIdle()
@@ -1272,7 +1310,39 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
     // flattening its content into scrollback (that's for a real exit, below).
     old.instance.unmount({ preserveScreen: true })
     await old.instance.waitUntilExit()
+  }
+
+  /** Flush and drop the live session, then attach a brand-new one in a freshly cleared screen. */
+  async function clearSession(): Promise<void> {
+    if (current.closing) return
+    await detachSession(current)
     current = await attachSession(undefined)
+  }
+
+  /**
+   * Flush and drop the live session, then attach a persisted session by id
+   * in a freshly cleared screen — the interactive counterpart to
+   * `dsh --profile tui --resume <sessionId>`.
+   *
+   * Unlike `clearSession`, attaching can fail (an unknown or malformed id):
+   * `attachSession` also mounts the Ink tree, and pi-tui's alternate-screen
+   * model doesn't support two live instances at once, so the old session
+   * must already be torn down before attempting the new one — there's no
+   * cheap way to validate the id first without attaching. A failure here
+   * therefore falls back to a brand-new session (matching `clearSession`'s
+   * behavior) with a notice explaining why, rather than leaving the TUI
+   * without any live session at all.
+   */
+  async function resumeSession(sessionId: string): Promise<void> {
+    if (current.closing) return
+    await detachSession(current)
+    try {
+      current = await attachSession(sessionId)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      current = await attachSession(undefined)
+      current.store.setNotice(`resume failed: ${message}; started a new session instead`)
+    }
   }
 
   // The TUI instance is the effect: plugin disposal must always release stdin.

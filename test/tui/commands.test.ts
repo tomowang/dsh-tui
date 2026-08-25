@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { TuiActions } from '../../src/tui/actions.js'
-import { matchSlashCommands, parseGoalCommand, parsePlanCommand, runSlashCommand } from '../../src/tui/commands.js'
+import { matchSlashCommands, parseGoalCommand, parsePlanCommand, parseRenameCommand, parseResumeCommand, runSlashCommand } from '../../src/tui/commands.js'
 
 function stubActions(): TuiActions {
   return {
@@ -14,6 +14,8 @@ function stubActions(): TuiActions {
     compact: vi.fn(),
     plan: vi.fn(),
     goal: vi.fn(),
+    rename: vi.fn(),
+    resume: vi.fn(),
     ensureFileIndex: vi.fn(),
     openModelProfile: vi.fn(),
     closeModelProfile: vi.fn(),
@@ -142,6 +144,56 @@ describe('parseGoalCommand', () => {
   })
 })
 
+describe('parseRenameCommand', () => {
+  it('returns an empty argument for bare /rename', () => {
+    expect(parseRenameCommand('/rename')).toBe('')
+  })
+
+  it('trims surrounding whitespace off the bare command', () => {
+    expect(parseRenameCommand('  /rename  ')).toBe('')
+  })
+
+  it('returns the title argument, trimmed', () => {
+    expect(parseRenameCommand('/rename  fix the auth bug  ')).toBe('fix the auth bug')
+  })
+
+  it('does not match a longer command sharing the /rename prefix', () => {
+    expect(parseRenameCommand('/renamed')).toBeUndefined()
+  })
+
+  it('does not match plain text or an unrelated command', () => {
+    expect(parseRenameCommand('not a command')).toBeUndefined()
+    expect(parseRenameCommand('/compact')).toBeUndefined()
+  })
+})
+
+describe('parseResumeCommand', () => {
+  it('returns an empty argument for bare /resume', () => {
+    expect(parseResumeCommand('/resume')).toBe('')
+  })
+
+  it('trims surrounding whitespace off the bare command', () => {
+    expect(parseResumeCommand('  /resume  ')).toBe('')
+  })
+
+  it('returns the session id argument, trimmed', () => {
+    expect(parseResumeCommand('/resume  session-abc123  ')).toBe('session-abc123')
+  })
+
+  it('does not match a longer command sharing the /resume prefix', () => {
+    expect(parseResumeCommand('/resumed')).toBeUndefined()
+  })
+
+  it('does not match /goal resume — that resumes a paused goal, not a session', () => {
+    expect(parseResumeCommand('/goal resume')).toBeUndefined()
+  })
+
+  it('does not match plain text or an unrelated command', () => {
+    expect(parseResumeCommand('not a command')).toBeUndefined()
+    expect(parseResumeCommand('/compact')).toBeUndefined()
+  })
+})
+
 describe('runSlashCommand', () => {
   it('dispatches /exit to shutdown', () => {
     const actions = stubActions()
@@ -228,6 +280,18 @@ describe('runSlashCommand', () => {
   it('does not dispatch /goal — CustomEditor routes it through parseGoalCommand/actions.goal instead', () => {
     const actions = stubActions()
     runSlashCommand('/goal', actions)
+    expect(totalCalls(actions)).toBe(0)
+  })
+
+  it('does not dispatch /rename — CustomEditor routes it through parseRenameCommand/actions.rename instead', () => {
+    const actions = stubActions()
+    runSlashCommand('/rename', actions)
+    expect(totalCalls(actions)).toBe(0)
+  })
+
+  it('does not dispatch /resume — CustomEditor routes it through parseResumeCommand/actions.resume instead', () => {
+    const actions = stubActions()
+    runSlashCommand('/resume', actions)
     expect(totalCalls(actions)).toBe(0)
   })
 })

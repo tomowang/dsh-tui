@@ -21,7 +21,7 @@
 import type { AgentStatus } from '@deepseek-ai/dsh-agent'
 import { Editor, Key, matchesKey, type TUI } from '@earendil-works/pi-tui'
 import type { TuiActions } from './actions.js'
-import { matchSlashCommands, parseGoalCommand, parsePlanCommand, runSlashCommand } from './commands.js'
+import { matchSlashCommands, parseGoalCommand, parsePlanCommand, parseRenameCommand, parseResumeCommand, runSlashCommand } from './commands.js'
 import { editorTheme, shellModeEditorBorderColor } from './piTheme.js'
 import { PromptAutocompleteProvider, type GetFileCandidates } from './promptAutocomplete.js'
 import { theme, fg } from './theme.js'
@@ -126,6 +126,18 @@ export class CustomEditor extends Editor {
     const goalCommand = parseGoalCommand(trimmed)
     if (goalCommand !== undefined) {
       this.actions.goal(goalCommand)
+      return
+    }
+    // `/rename` and `/resume` both take a free-text argument (a title, a
+    // session id), so they share `/plan`'s parse-ahead shape too.
+    const renameTitle = parseRenameCommand(trimmed)
+    if (renameTitle !== undefined) {
+      this.actions.rename(renameTitle)
+      return
+    }
+    const resumeSessionId = parseResumeCommand(trimmed)
+    if (resumeSessionId !== undefined) {
+      this.actions.resume(resumeSessionId)
       return
     }
     const matches = trimmed.startsWith('/') && !/\s/.test(trimmed) ? matchSlashCommands(trimmed) : []

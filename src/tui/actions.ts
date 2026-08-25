@@ -34,6 +34,10 @@ export interface TuiActions {
   plan(rawInput: string): void
   /** Run one parsed `/goal` command (show/create/edit/pause/resume/clear) via `ctx.goals`. */
   goal(command: GoalCommand): void
+  /** Rename the session's title via `ctx.sessionTitle`, pinning it against automatic regeneration. Empty/whitespace-only text shows a usage notice instead. */
+  rename(title: string): void
+  /** Flush the current session, then attach a persisted session by id in a fresh screen; a resume failure (unknown id) falls back to a brand-new session with a notice. */
+  resume(sessionId: string): void
   /** Start (or no-op if already loaded/loading) the background load backing the `@`-mention dropdown. */
   ensureFileIndex(): void
 
