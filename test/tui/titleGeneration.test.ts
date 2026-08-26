@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import { collectRenameSourceTexts } from '../../src/tui/titleGeneration.js'
+import { collectRenameSourceTexts, toKebabCase } from '../../src/tui/titleGeneration.js'
 
 /** Build a minimal event fixture; collectRenameSourceTexts only ever reads `.type`/`.data`. */
 function event(type: string, data: unknown): SessionEvent {
@@ -63,5 +63,51 @@ describe('collectRenameSourceTexts', () => {
 
   it('returns an empty array for an empty log', () => {
     expect(collectRenameSourceTexts([])).toEqual([])
+  })
+})
+
+describe('toKebabCase', () => {
+  it('lowercases and hyphenates a title-case sentence', () => {
+    expect(toKebabCase('Merge Agents Resume Overlays')).toBe('merge-agents-resume-overlays')
+  })
+
+  it('strips punctuation the model wasn\'t asked to include', () => {
+    expect(toKebabCase('Fix Auth Bug!!')).toBe('fix-auth-bug')
+  })
+
+  it('drops apostrophes instead of treating them as word breaks', () => {
+    expect(toKebabCase("Don't Stop")).toBe('dont-stop')
+  })
+
+  it('collapses runs of whitespace/punctuation into a single hyphen', () => {
+    expect(toKebabCase('too   many -- spaces')).toBe('too-many-spaces')
+  })
+
+  it('trims leading and trailing separators', () => {
+    expect(toKebabCase('  leading and trailing  ')).toBe('leading-and-trailing')
+  })
+
+  it('leaves an already-kebab-case slug unchanged', () => {
+    expect(toKebabCase('already-kebab-case')).toBe('already-kebab-case')
+  })
+
+  it('caps the word count at the default of 5', () => {
+    expect(toKebabCase('one two three four five six seven')).toBe('one-two-three-four-five')
+  })
+
+  it('honors an explicit maxWords override', () => {
+    expect(toKebabCase('one two three four five', 2)).toBe('one-two')
+  })
+
+  it('keeps non-Latin letters as their own word(s) instead of stripping them', () => {
+    expect(toKebabCase('修复认证 bug')).toBe('修复认证-bug')
+  })
+
+  it('returns an empty string for input with no letters or digits', () => {
+    expect(toKebabCase('!!! ---')).toBe('')
+  })
+
+  it('returns an empty string for empty input', () => {
+    expect(toKebabCase('')).toBe('')
   })
 })

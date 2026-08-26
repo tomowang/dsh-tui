@@ -63,7 +63,7 @@ import type {} from '@deepseek-ai/dsh-token-meter'
 
 import { ensureSessionIdPrefix, stripSessionIdPrefix } from './sessionId.js'
 import { textOf } from './render.js'
-import { collectRenameSourceTexts, TITLE_GENERATION_SYSTEM_PROMPT } from './tui/titleGeneration.js'
+import { collectRenameSourceTexts, TITLE_GENERATION_SYSTEM_PROMPT, toKebabCase } from './tui/titleGeneration.js'
 import { SLASH_COMMANDS, SLASH_COMMAND_WIDTH } from './tui/commands.js'
 import { goalPhaseLabel } from './tui/liveText.js'
 import { TuiStore } from './tui/store.js'
@@ -839,8 +839,8 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
     })) {
       assembler.push(chunk)
     }
-    const text = textOf(assembler.blocks()).trim()
-    return text === '' ? undefined : text
+    const slug = toKebabCase(textOf(assembler.blocks()))
+    return slug === '' ? undefined : slug
   }
 
   /** Create (or resume) one Agent, wire its listeners to a fresh store, and mount a fresh Ink tree. */
