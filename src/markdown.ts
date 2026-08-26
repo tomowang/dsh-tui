@@ -121,16 +121,31 @@ function parseTableSeparator(line: string): TableAlign[] | null {
   return aligns
 }
 
+/** Every escape this module's own `fg`/`bold`/`italic`/`strike`/`underline`/`hyperlink` helpers emit: SGR sequences and OSC 8 hyperlinks (BEL- or ST-terminated). */
+// eslint-disable-next-line no-control-regex -- matching the ANSI escapes this module's own styling helpers emit requires their literal control bytes.
+const ANSI_RE = /\x1b\][^\x07]*\x07|\x1b\][^\x1b]*\x1b\\|\x1b\[[0-9;]*m/g
+
 /**
- * Pad `styled` (already ANSI-wrapped) out to `width` using `raw`'s
- * unstyled length, since ANSI escapes have string length but no visual
- * width. Like the rest of this module, width is `string.length` (UTF-16
- * code units) rather than a display-width count, so a wide/astral cell
- * (CJK, emoji) can under-pad its column — a known limitation shared with
- * the fixed-width horizontal rule above.
+ * Visible length of an already-styled cell: ANSI escapes have string length
+ * but no on-screen width, so measuring `styled.length` directly would
+ * overcount by however many escape bytes the cell's markup produced.
+ * Stripping them first — rather than measuring the pre-styling raw source
+ * — also fixes the companion bug that source length would otherwise cause:
+ * `**bold**`'s raw text is 4 characters longer than what it renders as, so
+ * a column sized from raw source overcounts a bold cell's true width, and
+ * that same bold cell then looks "wide enough" and gets under-padded
+ * relative to its plain siblings. Like the rest of this module, "visible"
+ * means UTF-16 code units after stripping escapes, not a true display-width
+ * count, so a wide/astral cell (CJK, emoji) can still under-pad — a known
+ * limitation shared with the fixed-width horizontal rule below.
  */
-function padCell(raw: string, styled: string, width: number, align: TableAlign): string {
-  const gap = Math.max(0, width - raw.length)
+function visibleLength(styled: string): number {
+  return styled.replace(ANSI_RE, '').length
+}
+
+/** Pad an already-styled cell out to `width`, measuring by `visibleLength` rather than `styled.length`. */
+function padCell(styled: string, width: number, align: TableAlign): string {
+  const gap = Math.max(0, width - visibleLength(styled))
   if (align === 'right') return ' '.repeat(gap) + styled
   if (align === 'center') {
     const left = Math.floor(gap / 2)
@@ -139,14 +154,10 @@ function padCell(raw: string, styled: string, width: number, align: TableAlign):
   return styled + ' '.repeat(gap)
 }
 
-/** Style one table row (header or body) to a single padded, column-aligned line. */
-function formatTableRow(cells: readonly string[], widths: readonly number[], aligns: readonly TableAlign[], isHeader: boolean): string {
+/** Pad one row of already-styled cells (header or body) to a single column-aligned line. */
+function formatTableRow(styledCells: readonly string[], widths: readonly number[], aligns: readonly TableAlign[], isHeader: boolean): string {
   return widths
-    .map((width, i) => {
-      const raw = cells[i] ?? ''
-      const styled = applyInline(raw)
-      return padCell(raw, isHeader ? bold(styled) : styled, width, aligns[i] ?? 'left')
-    })
+    .map((width, i) => padCell(isHeader ? bold(styledCells[i] ?? '') : styledCells[i] ?? '', width, aligns[i] ?? 'left'))
     .join(dim(' │ '))
 }
 
@@ -176,19 +187,24 @@ export function renderMarkdown(text: string): string {
     if (!inCode && TABLE_ROW_RE.test(line) && i + 1 < lines.length) {
       const aligns = TABLE_ROW_RE.test(lines[i + 1]) ? parseTableSeparator(lines[i + 1]) : null
       if (aligns !== null) {
-        const header = splitTableRow(line)
-        const rows: string[][] = []
+        // Styled once here and reused for both width measurement and the
+        // final row text, so a column's width can never diverge from what
+        // padCell actually measures when placing its cells.
+        const styledHeader = splitTableRow(line).map(cell => applyInline(cell))
+        const styledRows: string[][] = []
         let j = i + 2
-        for (; j < lines.length && TABLE_ROW_RE.test(lines[j]); j++) rows.push(splitTableRow(lines[j]))
+        for (; j < lines.length && TABLE_ROW_RE.test(lines[j]); j++) {
+          styledRows.push(splitTableRow(lines[j]).map(cell => applyInline(cell)))
+        }
 
-        const columns = Math.max(header.length, ...rows.map(row => row.length), aligns.length)
+        const columns = Math.max(styledHeader.length, ...styledRows.map(row => row.length), aligns.length)
         const widths = Array.from({ length: columns }, (_, col) =>
-          Math.max(header[col]?.length ?? 0, ...rows.map(row => row[col]?.length ?? 0)))
+          Math.max(visibleLength(styledHeader[col] ?? ''), ...styledRows.map(row => visibleLength(row[col] ?? ''))))
         const columnAligns = Array.from({ length: columns }, (_, col) => aligns[col] ?? 'left')
 
-        out.push(formatTableRow(header, widths, columnAligns, true))
+        out.push(formatTableRow(styledHeader, widths, columnAligns, true))
         out.push(formatTableRule(widths))
-        for (const row of rows) out.push(formatTableRow(row, widths, columnAligns, false))
+        for (const styledRow of styledRows) out.push(formatTableRow(styledRow, widths, columnAligns, false))
 
         i = j - 1
         continue

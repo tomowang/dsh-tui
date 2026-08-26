@@ -187,6 +187,17 @@ describe('renderMarkdown', () => {
     expect(out).not.toContain('`x`')
   })
 
+  it('sizes and pads a column from visible length, not raw Markdown source length', () => {
+    // A bold cell's raw source ('**abc**', 7 chars) is longer than what it
+    // renders as ('abc', 3 chars); sizing/padding from the raw source both
+    // inflates the column past its true widest visible cell (here 'Note',
+    // 4 chars) and leaves the bold cell itself under-padded, since its
+    // already-long raw length looks like it "fills" the inflated width.
+    const out = renderMarkdown('| Note |\n|---|\n| **abc** |\n| xyz |')
+    const lines = stripAnsi(out).split('\n')
+    expect(lines).toEqual(['Note', '────', 'abc ', 'xyz '])
+  })
+
   it('right-aligns and center-aligns columns per the delimiter row', () => {
     // Two data rows so each column has a narrower cell whose padding is
     // actually observable (a column's widest cell gets none by definition).
