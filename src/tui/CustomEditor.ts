@@ -25,11 +25,11 @@ import { matchSlashCommands, parseGoalCommand, parsePlanCommand, parseRenameComm
 import { editorTheme, shellModeEditorBorderColor } from './piTheme.js'
 import { PromptAutocompleteProvider, type GetFileCandidates } from './promptAutocomplete.js'
 import { theme, fg } from './theme.js'
+import { buildTitledBorder, isPlainBorder } from './titledBorder.js'
 
 const EXIT_ARM_TIMEOUT_MS = 2000
 const armedHint = fg(theme.muted)
 const shellModeHint = fg(theme.warning)
-const bold = (s: string): string => `\x1b[1m${s}\x1b[0m`
 
 export interface CustomEditorDeps {
   readonly getStatus: () => AgentStatus
@@ -246,12 +246,11 @@ export class CustomEditor extends Editor {
   private withSessionTitle(lines: string[], width: number): string[] {
     const title = this.deps.getTitle()
     if (title === null || title === undefined || lines.length === 0) return lines
-    // eslint-disable-next-line no-control-regex -- stripping this class's own borderColor SGR wrapper to test for the plain (unscrolled) border.
-    if (lines[0].replace(/\x1b\[[0-9;]*m/g, '') !== '─'.repeat(width)) return lines
-    const dashCount = width - title.length - 1
-    if (dashCount < 0) return lines
+    if (!isPlainBorder(lines[0], width)) return lines
+    const border = buildTitledBorder(width, title, this.borderColor)
+    if (border === undefined) return lines
     const next = [...lines]
-    next[0] = this.borderColor('─'.repeat(dashCount)) + ' ' + bold(this.borderColor(title))
+    next[0] = border
     return next
   }
 }

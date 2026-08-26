@@ -75,6 +75,7 @@ import type { ProviderDraft, ProviderRow, StoredProviderProfile } from './tui/mo
 import type { PluginRow } from './tui/plugins/types.js'
 import type { AgentPresetRow } from './tui/agentPresets/types.js'
 import type { SessionResumeRow } from './tui/resume/types.js'
+import { selectResumeCandidates } from './tui/resume/select.js'
 import type { QuestionAnswer, QuestionOptionRow } from './tui/interaction/types.js'
 
 /** Stable Cordis plugin name. */
@@ -499,10 +500,7 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
     if (sessionPersistence === undefined) return
     try {
       const headers = await sessionPersistence.list()
-      const cwd = process.cwd()
-      const candidates = headers
-        .filter(header => header.origin !== 'subagent' && header.cwd === cwd && header.id !== current.agent.session.id)
-        .sort((a, b) => b.createdAt - a.createdAt)
+      const candidates = selectResumeCandidates(headers, process.cwd(), current.agent.session.id)
       const rows = await Promise.all(candidates.map(async (header): Promise<SessionResumeRow> => {
         let title: string | undefined
         try {

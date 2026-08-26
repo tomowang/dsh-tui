@@ -12,27 +12,13 @@ import { Key, matchesKey } from '@earendil-works/pi-tui'
 import type { TuiActions } from '../actions.js'
 import type { TuiStore } from '../store.js'
 import { theme, fg } from '../theme.js'
+import { formatAge } from './format.js'
 
 const bold = (s: string): string => `\x1b[1m${s}\x1b[0m`
 const secondary = fg(theme.secondary)
 const muted = fg(theme.muted)
 const errorColor = fg(theme.error)
 const invert = (s: string): string => `\x1b[7m${s}\x1b[0m`
-
-const MINUTE_MS = 60_000
-const HOUR_MS = 60 * MINUTE_MS
-const DAY_MS = 24 * HOUR_MS
-
-/** Calendar-relative age for the picker's trailing column: "2h ago", "yesterday", "3 days ago", then a plain date past a week. */
-function formatAge(createdAt: number, now: number): string {
-  const diff = Math.max(0, now - createdAt)
-  if (diff < MINUTE_MS) return 'just now'
-  if (diff < HOUR_MS) return `${Math.floor(diff / MINUTE_MS)}m ago`
-  if (diff < DAY_MS) return `${Math.floor(diff / HOUR_MS)}h ago`
-  if (diff < 2 * DAY_MS) return 'yesterday'
-  if (diff < 7 * DAY_MS) return `${Math.floor(diff / DAY_MS)} days ago`
-  return new Date(createdAt).toISOString().slice(0, 10)
-}
 
 export class ResumeOverlay implements Component {
   constructor(
