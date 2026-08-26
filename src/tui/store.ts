@@ -17,6 +17,7 @@ import type { ContextBreakdownProjection, ContextPressureProjection, TokenUsageP
 import type { DiscoveredModel, ProviderDraft, ProviderRow } from './modelProfile/types.js'
 import type { PluginRow } from './plugins/types.js'
 import type { AgentPresetRow } from './agentPresets/types.js'
+import type { SessionResumeRow } from './resume/types.js'
 import type { ApprovalPromptState, QuestionPromptState } from './interaction/types.js'
 import { reasoningOf, textOf } from '../render.js'
 
@@ -50,6 +51,15 @@ export interface AgentPresetsOverlayState {
   readonly error: string | undefined
 }
 
+/** Overlay-owned state for the `/resume` session picker. */
+export interface ResumeOverlayState {
+  /** Joined past-session listing for the current cwd, newest first; empty while the first load is still in flight (see `busy`). */
+  readonly rows: readonly SessionResumeRow[]
+  readonly selected: number
+  readonly busy: boolean
+  readonly error: string | undefined
+}
+
 /**
  * Full-screen overlay replacing the live region's normal controls — except
  * `'approval'`, which `TuiApp` renders inline in the dock (a live-region row
@@ -64,6 +74,7 @@ export type Overlay =
   | { readonly kind: 'context' }
   | { readonly kind: 'plugins'; readonly rows: readonly PluginRow[] }
   | { readonly kind: 'agentPresets'; readonly agentPresets: AgentPresetsOverlayState }
+  | { readonly kind: 'resume'; readonly resume: ResumeOverlayState }
   | { readonly kind: 'approval'; readonly approval: ApprovalPromptState }
   | { readonly kind: 'userQuestion'; readonly userQuestion: QuestionPromptState }
 
@@ -403,6 +414,11 @@ export class TuiStore {
     })
   }
 
+  /** Open the `/resume` overlay to a fresh, loading listing. */
+  openResume(): void {
+    this.set({ overlay: { kind: 'resume', resume: { rows: [], selected: 0, busy: true, error: undefined } } })
+  }
+
   /** Present one pending tool-approval decision, taking over the live region. */
   openApproval(approval: ApprovalPromptState): void {
     this.set({ overlay: { kind: 'approval', approval } })
@@ -437,6 +453,17 @@ export class TuiStore {
   /** Move the `/presets` overlay's list cursor. */
   selectAgentPresetRow(index: number): void {
     this.updateAgentPresets({ selected: index })
+  }
+
+  /** Patch the open `/resume` overlay's sub-state; a no-op once it's closed. */
+  updateResume(patch: Partial<ResumeOverlayState>): void {
+    if (this.state.overlay.kind !== 'resume') return
+    this.set({ overlay: { kind: 'resume', resume: { ...this.state.overlay.resume, ...patch } } })
+  }
+
+  /** Move the `/resume` overlay's list cursor. */
+  selectResumeRow(index: number): void {
+    this.updateResume({ selected: index })
   }
 
   /** Mark the `@`-mention file index as loading; a no-op once candidates are already present. */

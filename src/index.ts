@@ -55,7 +55,10 @@ import type {} from '@deepseek-ai/dsh-session-stats'
 // Resolves the 'title' SessionProjectionMap entry the terminal title
 // (`TuiApp`'s `updateTerminalTitle`) reads, and `/rename`'s empty-title
 // rejection.
-import { SessionTitleInvalidError } from '@deepseek-ai/dsh-session-title'
+import { foldSessionTitle, SessionTitleInvalidError } from '@deepseek-ai/dsh-session-title'
+// Type-only: resolves ctx.sessionPersistence for the /resume picker's
+// cwd-scoped past-session listing.
+import type {} from '@deepseek-ai/dsh-session-persistence'
 import type {} from '@deepseek-ai/dsh-token-meter'
 
 import { ensureSessionIdPrefix, stripSessionIdPrefix } from './sessionId.js'
@@ -71,6 +74,7 @@ import { checkForUpdate } from './updateCheck.js'
 import type { ProviderDraft, ProviderRow, StoredProviderProfile } from './tui/modelProfile/types.js'
 import type { PluginRow } from './tui/plugins/types.js'
 import type { AgentPresetRow } from './tui/agentPresets/types.js'
+import type { SessionResumeRow } from './tui/resume/types.js'
 import type { QuestionAnswer, QuestionOptionRow } from './tui/interaction/types.js'
 
 /** Stable Cordis plugin name. */
@@ -302,6 +306,11 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
   // roster just shows no preset in the status bar and tells the reader
   // /presets is unavailable instead of refusing to start.
   const presets = ctx.get('agentPresets')
+  // Same optional-service pattern: a profile without durable session
+  // persistence just tells the reader /resume's picker is unavailable
+  // instead of refusing to start (`/resume <id>` itself still works — it
+  // goes through `agents.resume`, not this seam).
+  const sessionPersistence = ctx.get('sessionPersistence')
   // Same optional-service pattern: a profile without a mounted settings
   // service just keeps prompt history in memory for the process's lifetime
   // instead of refusing to start. Registration can also fail loud on an
@@ -475,6 +484,38 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
       current.store.updateAgentPresets({ rows, busy: false, error: undefined })
     } catch (error) {
       current.store.updateAgentPresets({ busy: false, error: error instanceof Error ? error.message : String(error) })
+    }
+  }
+
+  /**
+   * Fetch this cwd's past sessions (headers only — cheap, no full-log parse)
+   * and refresh the open `/resume` overlay's row list. A header alone has no
+   * title (that's folded from `session/title` events, not stored metadata),
+   * so each candidate gets one `inspect` — a full log read — to fold its
+   * title; a failed or title-less inspect just leaves that row's title
+   * `undefined` ("untitled") rather than dropping the row or the listing.
+   */
+  async function loadResumeSessions(): Promise<void> {
+    if (sessionPersistence === undefined) return
+    try {
+      const headers = await sessionPersistence.list()
+      const cwd = process.cwd()
+      const candidates = headers
+        .filter(header => header.origin !== 'subagent' && header.cwd === cwd && header.id !== current.agent.session.id)
+        .sort((a, b) => b.createdAt - a.createdAt)
+      const rows = await Promise.all(candidates.map(async (header): Promise<SessionResumeRow> => {
+        let title: string | undefined
+        try {
+          const inspected = await sessionPersistence.inspect(header.id)
+          title = foldSessionTitle(inspected.events)?.title
+        } catch {
+          title = undefined
+        }
+        return { id: stripSessionIdPrefix(String(header.id)), title, createdAt: header.createdAt }
+      }))
+      current.store.updateResume({ rows, busy: false, error: undefined })
+    } catch (error) {
+      current.store.updateResume({ busy: false, error: error instanceof Error ? error.message : String(error) })
     }
   }
 
@@ -930,10 +971,33 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
       resume(sessionId) {
         const trimmedId = sessionId.trim()
         if (trimmedId === '') {
-          store.setNotice('Usage: /resume <sessionId>')
+          if (sessionPersistence === undefined) {
+            store.setNotice('the session picker is not available in this profile; use /resume <sessionId>')
+            return
+          }
+          store.openResume()
+          void loadResumeSessions()
           return
         }
         void resumeSession(trimmedId)
+      },
+      openResume() {
+        if (sessionPersistence === undefined) {
+          store.setNotice('the session picker is not available in this profile; use /resume <sessionId>')
+          return
+        }
+        store.openResume()
+        void loadResumeSessions()
+      },
+      closeResume() {
+        store.closeOverlay()
+      },
+      selectResumeRow(index) {
+        store.selectResumeRow(index)
+      },
+      applyResume(id) {
+        store.closeOverlay()
+        void resumeSession(id)
       },
       cyclePermission() {
         if (permissionPresets === undefined) {
