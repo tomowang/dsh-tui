@@ -242,6 +242,7 @@ class TuiApp implements TuiHandle {
       getStatus: () => store.getSnapshot().status,
       history: options.promptHistory,
       getFileCandidates: () => this.waitForFileIndex(),
+      getTitle: () => store.getSnapshot().title,
     })
 
     const noticeText = new DynamicText(() => {

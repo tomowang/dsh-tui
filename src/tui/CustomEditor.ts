@@ -29,12 +29,15 @@ import { theme, fg } from './theme.js'
 const EXIT_ARM_TIMEOUT_MS = 2000
 const armedHint = fg(theme.muted)
 const shellModeHint = fg(theme.warning)
+const bold = (s: string): string => `\x1b[1m${s}\x1b[0m`
 
 export interface CustomEditorDeps {
   readonly getStatus: () => AgentStatus
   /** Submitted-line history for up/down-arrow recall; owned outside the component tree so it survives `/clear`. */
   readonly history: string[]
   readonly getFileCandidates: GetFileCandidates
+  /** Current session title (the 'title' projection: `null` before one lands, `undefined` without `dsh-session-title` composed), for the box's top-border label. */
+  readonly getTitle: () => string | null | undefined
 }
 
 export class CustomEditor extends Editor {
@@ -209,7 +212,7 @@ export class CustomEditor extends Editor {
     const hints: string[] = []
     if (this.armedKey !== undefined) hints.push(armedHint(`Press Ctrl+${this.armedKey.toUpperCase()} again to exit`))
     if (this.shellMode) hints.push(shellModeHint('! shell mode — Enter runs the command, Esc/Backspace exits'))
-    return [...hints, ...this.withPromptPrefix(super.render(width), width)]
+    return [...hints, ...this.withPromptPrefix(this.withSessionTitle(super.render(width), width), width)]
   }
 
   /**
@@ -226,6 +229,29 @@ export class CustomEditor extends Editor {
     const prefix = this.borderColor(this.shellMode ? '! ' : '› ')
     const next = [...lines]
     next[1] = prefix + next[1].slice(2)
+    return next
+  }
+
+  /**
+   * Right-aligns the session title into the box's top border (index 0),
+   * Claude Code CLI-style — e.g. `───────────────── explore-dir`. Only
+   * replaces the *plain* unscrolled border (a bare run of `─`, matched by
+   * stripping SGR before comparing): Editor's own scroll-up indicator
+   * (`createScrollBorder` in pi-tui, e.g. `─── ↑ 3 more ─────`) is multi-line
+   * input's only affordance for "there's more above", so it must win over
+   * the title whenever both would want the same row. No title (not yet
+   * accepted, or `dsh-session-title` not composed) or a title too long for
+   * the box at its current width both leave the border untouched.
+   */
+  private withSessionTitle(lines: string[], width: number): string[] {
+    const title = this.deps.getTitle()
+    if (title === null || title === undefined || lines.length === 0) return lines
+    // eslint-disable-next-line no-control-regex -- stripping this class's own borderColor SGR wrapper to test for the plain (unscrolled) border.
+    if (lines[0].replace(/\x1b\[[0-9;]*m/g, '') !== '─'.repeat(width)) return lines
+    const dashCount = width - title.length - 1
+    if (dashCount < 0) return lines
+    const next = [...lines]
+    next[0] = this.borderColor('─'.repeat(dashCount)) + ' ' + bold(this.borderColor(title))
     return next
   }
 }
