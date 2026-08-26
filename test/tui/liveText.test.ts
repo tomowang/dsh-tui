@@ -91,6 +91,13 @@ describe('buildAgentsStripText', () => {
     expect(buildAgentsStripText([childRow('c1', 'Fix auth bug', 'inactive')], undefined)).toBe('')
   })
 
+  it('stays up if the child just finished is the one currently being viewed, so the reader is never stranded', () => {
+    const text = buildAgentsStripText([childRow('c1', 'Fix auth bug', 'inactive')], 'c1')
+    expect(text).not.toBe('')
+    expect(text).toContain('Fix auth bug')
+    expect(text).toContain('←/→') // still carries the way back to main.
+  })
+
   it('still shows a finished child as long as a sibling from the same batch is still running', () => {
     const rows = [childRow('c1', 'Fix auth bug', 'inactive'), childRow('c2', 'Reptile cold-blooded evolution', 'running')]
     const text = buildAgentsStripText(rows, undefined)

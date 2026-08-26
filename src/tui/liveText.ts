@@ -138,19 +138,25 @@ function slidingWindow<T>(children: readonly T[], viewedIndex: number, size: num
  * unannounced — and the window itself slides to keep whichever child is
  * currently viewed inside it, so every child stays reachable by cycling
  * (`cycleAgentsStrip`) even past the fifth. Renders nothing unless at least
- * one child is currently `running` — mirroring Claude Code CLI's own
- * ephemeral background-task indicator, this is about the current batch of
- * active work, not a permanent log of every subagent the session has ever
- * spawned. A child that's already finished still shows (and stays
+ * one child is currently `running` OR a child's transcript is the one
+ * currently open — mirroring Claude Code CLI's own ephemeral
+ * background-task indicator, this is about the current batch of active
+ * work, not a permanent log of every subagent the session has ever
+ * spawned, but the reader mid-navigation away from main can't be left
+ * stranded either: if the very child being viewed is the one that just
+ * finished, the strip (and its Escape/arrow hint) must stay up until they
+ * actually leave, even though nothing is `running` any more by then. A
+ * child that's already finished otherwise still shows (and stays
  * reachable) as long as a sibling from the same batch is still running;
- * once the whole batch settles, the strip disappears entirely, including
- * the finished siblings' segments.
+ * once the whole batch settles and nothing is being viewed, the strip
+ * disappears entirely, including the finished siblings' segments.
  * @param rows - the live agents-strip roster (`TuiState.agentsStrip`); only `child` rows render as segments — a `diagnostic` row has no transcript to switch to.
  * @param viewingChildId - `TuiState.viewingChild`'s child id, or `undefined` while the main transcript is shown (see `cycleAgentsStrip` in `index.ts`).
  */
 export function buildAgentsStripText(rows: readonly SubagentRow[], viewingChildId: string | undefined): string {
   const children = rows.filter((row): row is Extract<SubagentRow, { kind: 'child' }> => row.kind === 'child')
-  if (!children.some(child => child.activity === 'running')) return ''
+  const anyRunning = children.some(child => child.activity === 'running')
+  if (!anyRunning && viewingChildId === undefined) return ''
   const segment = (id: string | undefined, label: string): string => {
     const active = id === viewingChildId
     const circle = active ? success('●') : dim('○')
