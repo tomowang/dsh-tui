@@ -4,7 +4,7 @@
  * module detects whether a text blob is (at least partly) Markdown before
  * paying the cost of styling it — plain prose keeps rendering exactly as it
  * always has, only text carrying real Markdown syntax gets headers, bold,
- * lists, code spans, etc. converted to ANSI.
+ * lists, code spans, tables, etc. converted to ANSI.
  * @module @tomowang/dsh-tui/markdown
  */
 
@@ -32,6 +32,7 @@ const BLOCKQUOTE_RE = /^(\s*)((?:>\s?)+)(.*)$/
 const UNORDERED_RE = /^(\s*)([-*+])\s+(.*)$/
 const ORDERED_RE = /^(\s*)(\d+)([.)])\s+(.*)$/
 const TABLE_ROW_RE = /^\s*\|.*\|\s*$/
+const TABLE_SEPARATOR_CELL_RE = /^:?-+:?$/
 const LINK_RE = /\[([^\]\n]+)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/
 const BOLD_RE = /\*\*([^*\n]+)\*\*|__([^_\n]+)__/
 const INLINE_CODE_RE = /`([^`\n]+)`/
@@ -94,11 +95,82 @@ function applyInline(text: string): string {
     .join('')
 }
 
+type TableAlign = 'left' | 'center' | 'right'
+
+/** Split a line already confirmed by `TABLE_ROW_RE` into trimmed cells, dropping the framing `|`. */
+function splitTableRow(line: string): string[] {
+  const inner = line.trim().replace(/^\|/, '').replace(/\|$/, '')
+  return inner.split('|').map(cell => cell.trim())
+}
+
+/**
+ * A GFM delimiter row: every cell is dashes with optional leading/trailing
+ * colons for alignment. Returns each column's alignment, or `null` when
+ * `line` isn't a valid delimiter row — the caller then treats the preceding
+ * line as ordinary text rather than a table header.
+ */
+function parseTableSeparator(line: string): TableAlign[] | null {
+  const cells = splitTableRow(line)
+  const aligns: TableAlign[] = []
+  for (const cell of cells) {
+    if (!TABLE_SEPARATOR_CELL_RE.test(cell)) return null
+    const left = cell.startsWith(':')
+    const right = cell.endsWith(':')
+    aligns.push(left && right ? 'center' : right ? 'right' : 'left')
+  }
+  return aligns
+}
+
+/** Every escape this module's own `fg`/`bold`/`italic`/`strike`/`underline`/`hyperlink` helpers emit: SGR sequences and OSC 8 hyperlinks (BEL- or ST-terminated). */
+// eslint-disable-next-line no-control-regex -- matching the ANSI escapes this module's own styling helpers emit requires their literal control bytes.
+const ANSI_RE = /\x1b\][^\x07]*\x07|\x1b\][^\x1b]*\x1b\\|\x1b\[[0-9;]*m/g
+
+/**
+ * Visible length of an already-styled cell: ANSI escapes have string length
+ * but no on-screen width, so measuring `styled.length` directly would
+ * overcount by however many escape bytes the cell's markup produced.
+ * Stripping them first — rather than measuring the pre-styling raw source
+ * — also fixes the companion bug that source length would otherwise cause:
+ * `**bold**`'s raw text is 4 characters longer than what it renders as, so
+ * a column sized from raw source overcounts a bold cell's true width, and
+ * that same bold cell then looks "wide enough" and gets under-padded
+ * relative to its plain siblings. Like the rest of this module, "visible"
+ * means UTF-16 code units after stripping escapes, not a true display-width
+ * count, so a wide/astral cell (CJK, emoji) can still under-pad — a known
+ * limitation shared with the fixed-width horizontal rule below.
+ */
+function visibleLength(styled: string): number {
+  return styled.replace(ANSI_RE, '').length
+}
+
+/** Pad an already-styled cell out to `width`, measuring by `visibleLength` rather than `styled.length`. */
+function padCell(styled: string, width: number, align: TableAlign): string {
+  const gap = Math.max(0, width - visibleLength(styled))
+  if (align === 'right') return ' '.repeat(gap) + styled
+  if (align === 'center') {
+    const left = Math.floor(gap / 2)
+    return ' '.repeat(left) + styled + ' '.repeat(gap - left)
+  }
+  return styled + ' '.repeat(gap)
+}
+
+/** Pad one row of already-styled cells (header or body) to a single column-aligned line. */
+function formatTableRow(styledCells: readonly string[], widths: readonly number[], aligns: readonly TableAlign[], isHeader: boolean): string {
+  return widths
+    .map((width, i) => padCell(isHeader ? bold(styledCells[i] ?? '') : styledCells[i] ?? '', width, aligns[i] ?? 'left'))
+    .join(dim(' │ '))
+}
+
+/** A dim horizontal rule under the header row, with a cross at each column boundary. */
+function formatTableRule(widths: readonly number[]): string {
+  return dim(widths.map(width => '─'.repeat(width)).join('─┼─'))
+}
+
 /**
  * Render Markdown source to ANSI-styled terminal text: headers, fenced/
- * inline code, block quotes, ordered/unordered lists, rules, links, bold,
- * strikethrough, and emphasis. Text that `looksLikeMarkdown` rejects passes
- * through byte-for-byte unchanged.
+ * inline code, block quotes, ordered/unordered lists, rules, tables, links,
+ * bold, strikethrough, and emphasis. Text that `looksLikeMarkdown` rejects
+ * passes through byte-for-byte unchanged.
  */
 export function renderMarkdown(text: string): string {
   if (!looksLikeMarkdown(text)) return text
@@ -108,7 +180,37 @@ export function renderMarkdown(text: string): string {
   let fenceChar = ''
   let fenceLen = 0
 
-  for (const line of text.split('\n')) {
+  const lines = text.split('\n')
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+
+    if (!inCode && TABLE_ROW_RE.test(line) && i + 1 < lines.length) {
+      const aligns = TABLE_ROW_RE.test(lines[i + 1]) ? parseTableSeparator(lines[i + 1]) : null
+      if (aligns !== null) {
+        // Styled once here and reused for both width measurement and the
+        // final row text, so a column's width can never diverge from what
+        // padCell actually measures when placing its cells.
+        const styledHeader = splitTableRow(line).map(cell => applyInline(cell))
+        const styledRows: string[][] = []
+        let j = i + 2
+        for (; j < lines.length && TABLE_ROW_RE.test(lines[j]); j++) {
+          styledRows.push(splitTableRow(lines[j]).map(cell => applyInline(cell)))
+        }
+
+        const columns = Math.max(styledHeader.length, ...styledRows.map(row => row.length), aligns.length)
+        const widths = Array.from({ length: columns }, (_, col) =>
+          Math.max(visibleLength(styledHeader[col] ?? ''), ...styledRows.map(row => visibleLength(row[col] ?? ''))))
+        const columnAligns = Array.from({ length: columns }, (_, col) => aligns[col] ?? 'left')
+
+        out.push(formatTableRow(styledHeader, widths, columnAligns, true))
+        out.push(formatTableRule(widths))
+        for (const styledRow of styledRows) out.push(formatTableRow(styledRow, widths, columnAligns, false))
+
+        i = j - 1
+        continue
+      }
+    }
+
     const fence = FENCE_RE.exec(line)
     if (fence !== null && (!inCode || (fence[2][0] === fenceChar && fence[2].length >= fenceLen))) {
       if (inCode) {
