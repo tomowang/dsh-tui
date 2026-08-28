@@ -35,6 +35,8 @@ An open-source terminal front door for [DeepSeek Harness](https://github.com/dee
 - **Plan mode** — `/plan [message]` enters plan mode (optionally steering a first message under it), `/plan off` leaves it; a model-proposed plan lands in the existing question flow as an Approve/Keep-planning review.
 - **Goal mode** — `/goal <objective>` sets a long-running goal shown as a live dock strip (phase + objective, hiding on completion like the web portal); `/goal clear|edit <objective>|pause|resume` manages it, and automatic continuation rounds keep running in this same session while the goal is active and armed.
 - **Manual compaction** — `/compact` summarizes and compacts session history on demand.
+- **Session rename** — `/rename <title>` sets an explicit title; bare `/rename` generates one from the conversation so far via one on-demand model call, as a kebab-case slug (Claude Code CLI's own convention, e.g. `fix-auth-bug`) rather than the harness's own natural-language default. The accepted title also shows right-aligned in the prompt box's own top border, alongside the terminal window/tab title.
+- **Session resume** — `/resume <sessionId>` switches to a persisted session in a fresh screen (falling back to a brand-new session with a notice on an unknown id); bare `/resume` opens a picker of this working directory's past sessions instead — newest first, each with its folded title where one landed.
 - **Persisted prompt history** — submitted lines are saved across processes and `/clear`, recalled with `↑`/`↓`.
 - **Readline-style input** — word/line motion, kill/yank-style deletes, multi-line drafts, and shell-like double-press `Ctrl+C`/`Ctrl+D` to exit.
 - **Shell mode** — a leading `!` on an empty prompt (Claude Code's convention) switches Enter to run the line as a local shell command instead of sending it to the agent; the prompt border turns yellow for the duration, and output streams into the transcript without touching the session log.
@@ -84,6 +86,8 @@ Any row `--dump-config` prints — the model adapter, tool set, sandbox policy, 
 | `/goal [objective]` | set a long-running goal (or, with no argument, show the current goal) |
 | `/goal clear` / `/goal edit <objective>` / `/goal pause` / `/goal resume` | clear, reword, pause, or resume the current goal |
 | `/compact` | summarize and compact session history |
+| `/rename [title]` | set an explicit session title; with no argument, generates one from the conversation so far |
+| `/resume [sessionId]` | switch to a persisted session by id; with no argument, opens a picker of this directory's past sessions |
 | `/clear` | flush the current session and start a new one |
 | `/exit`, `/quit` | cancel, wait for idle, flush the session, exit |
 
@@ -98,6 +102,7 @@ Any row `--dump-config` prints — the model adapter, tool set, sandbox policy, 
 | `Ctrl+O` | open the Tool Cards overlay; `↑`/`↓` select a card, `Enter`/`Space` expand or collapse, `PgUp`/`PgDn`/`Home`/`End` scroll an expanded card, `Esc`/`q`/`Ctrl+O` close |
 | `!` (on an empty prompt) | enter shell mode: Enter runs the line as a local shell command; `Esc`/backspace-on-empty exits back to normal mode |
 | `@` | open the file-mention dropdown; `↑`/`↓` to move, `Tab`/`Enter` to insert the path, `Esc` to dismiss |
+| `/resume` (bare) | open the session picker; `↑`/`↓` select, `Enter` resumes the selected session, `Esc`/`q` closes without resuming |
 | `Tab` | in `/command` mode, autocomplete the highlighted command |
 | `↑` / `↓`, `Ctrl+P` / `Ctrl+N` | recall prompt history, or move within a multi-line draft |
 | `Shift+Enter`, `Alt+Enter`, trailing `\` + `Enter` | insert a newline instead of submitting |
