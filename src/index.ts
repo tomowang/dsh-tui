@@ -66,7 +66,7 @@ import { ensureSessionIdPrefix, stripSessionIdPrefix } from './sessionId.js'
 import { textOf } from './render.js'
 import { collectRenameSourceTexts, TITLE_GENERATION_SYSTEM_PROMPT, toKebabCase } from './tui/titleGeneration.js'
 import { SLASH_COMMANDS, SLASH_COMMAND_WIDTH } from './tui/commands.js'
-import { goalPhaseLabel } from './tui/liveText.js'
+import { agentsStripIsVisible, goalPhaseLabel } from './tui/liveText.js'
 import { TuiStore } from './tui/store.js'
 import type { ModelProfileOverlayState, PermissionState, PresetState, StatsSnapshot } from './tui/store.js'
 import { mountTui, restoreActiveTerminal, type TuiHandle } from './tui/TuiApp.js'
@@ -554,8 +554,16 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
     }
     try {
       const inspected = await sessionPersistence.inspect(sessionId)
+      // The reader may have cycled to a different child (or back to main)
+      // while this awaited — an older, slower inspect() landing after a
+      // newer one would otherwise silently overwrite the transcript
+      // actually being viewed with a stale one. There's no cancellation on
+      // sessionPersistence.inspect() itself, so this just discards a result
+      // nothing wants any more rather than applying it.
+      if (current.store.getSnapshot().viewingChild?.childId !== childId) return
       current.store.updateViewingChild({ events: inspected.events, live: false, busy: false, error: undefined })
     } catch (error) {
+      if (current.store.getSnapshot().viewingChild?.childId !== childId) return
       current.store.updateViewingChild({ busy: false, error: error instanceof Error ? error.message : String(error) })
     }
   }
@@ -1471,11 +1479,16 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
 
       cycleAgentsStrip(direction) {
         const snapshot = store.getSnapshot()
+        const currentId = snapshot.viewingChild?.childId
+        // Mirrors buildAgentsStripText's own visibility rule: once a batch
+        // has fully settled and nothing is being viewed, the strip has
+        // nothing to offer, so cycling must not be able to jump to a child
+        // it never visibly showed.
+        if (!agentsStripIsVisible(snapshot.agentsStrip, currentId)) return
         const childIds = snapshot.agentsStrip.filter(row => row.kind === 'child').map(row => row.id)
         if (childIds.length === 0) return
         // `undefined` stands for "main" — always the first position.
         const positions: (string | undefined)[] = [undefined, ...childIds]
-        const currentId = snapshot.viewingChild?.childId
         // The extra `+ positions.length` keeps the modulo result non-negative for direction -1.
         const nextIndex = (positions.indexOf(currentId) + direction + positions.length) % positions.length
         const next = positions[nextIndex]

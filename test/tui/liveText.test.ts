@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { GoalProjection } from '@deepseek-ai/dsh-goal'
 import type { SubagentRow } from '../../src/tui/agents/types.js'
-import { buildAgentsStripText, buildGoalBarText, buildTerminalTitle, buildUpdateHintText } from '../../src/tui/liveText.js'
+import { agentsStripIsVisible, buildAgentsStripText, buildGoalBarText, buildTerminalTitle, buildUpdateHintText } from '../../src/tui/liveText.js'
 
 /** A minimal 'goal' projection fixture; only the fields the strip reads are meaningful. */
 function projection(over: Partial<GoalProjection['goal']> = {}): GoalProjection {
@@ -77,6 +77,28 @@ function childRow(id: string, label: string, activity: 'running' | 'inactive' = 
 function diagnosticRow(id: string): SubagentRow {
   return { kind: 'diagnostic', id, diagnostic: 'corrupt' }
 }
+
+describe('agentsStripIsVisible', () => {
+  it('is false with no children at all', () => {
+    expect(agentsStripIsVisible([], undefined)).toBe(false)
+  })
+
+  it('is true while at least one child is running', () => {
+    expect(agentsStripIsVisible([childRow('c1', 'Fix auth bug', 'running')], undefined)).toBe(true)
+  })
+
+  it('is false once every child has finished and nothing is being viewed', () => {
+    expect(agentsStripIsVisible([childRow('c1', 'Fix auth bug', 'inactive')], undefined)).toBe(false)
+  })
+
+  it('is true while a child is being viewed, even if it and everything else has finished', () => {
+    expect(agentsStripIsVisible([childRow('c1', 'Fix auth bug', 'inactive')], 'c1')).toBe(true)
+  })
+
+  it('ignores diagnostic rows entirely', () => {
+    expect(agentsStripIsVisible([diagnosticRow('bad-1')], undefined)).toBe(false)
+  })
+})
 
 describe('buildAgentsStripText', () => {
   it('renders nothing for a session with no subagent children', () => {

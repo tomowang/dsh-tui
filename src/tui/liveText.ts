@@ -153,10 +153,19 @@ function slidingWindow<T>(children: readonly T[], viewedIndex: number, size: num
  * @param rows - the live agents-strip roster (`TuiState.agentsStrip`); only `child` rows render as segments — a `diagnostic` row has no transcript to switch to.
  * @param viewingChildId - `TuiState.viewingChild`'s child id, or `undefined` while the main transcript is shown (see `cycleAgentsStrip` in `index.ts`).
  */
+/**
+ * Whether the docked strip has anything to offer right now — the exact
+ * rule `buildAgentsStripText` renders by, exported so `cycleAgentsStrip`
+ * (`index.ts`) can refuse to navigate to a child the strip never visibly
+ * offered in the first place, instead of the two silently drifting apart.
+ */
+export function agentsStripIsVisible(rows: readonly SubagentRow[], viewingChildId: string | undefined): boolean {
+  return rows.some(row => row.kind === 'child' && row.activity === 'running') || viewingChildId !== undefined
+}
+
 export function buildAgentsStripText(rows: readonly SubagentRow[], viewingChildId: string | undefined): string {
+  if (!agentsStripIsVisible(rows, viewingChildId)) return ''
   const children = rows.filter((row): row is Extract<SubagentRow, { kind: 'child' }> => row.kind === 'child')
-  const anyRunning = children.some(child => child.activity === 'running')
-  if (!anyRunning && viewingChildId === undefined) return ''
   const segment = (id: string | undefined, label: string): string => {
     const active = id === viewingChildId
     const circle = active ? success('●') : dim('○')
