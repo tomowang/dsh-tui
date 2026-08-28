@@ -102,19 +102,19 @@ describe('agentsStripIsVisible', () => {
 
 describe('buildAgentsStripText', () => {
   it('renders nothing for a session with no subagent children', () => {
-    expect(buildAgentsStripText([], undefined)).toBe('')
+    expect(buildAgentsStripText([], undefined, '⠋')).toBe('')
   })
 
   it('renders nothing when only diagnostic rows exist — none has a transcript to switch to', () => {
-    expect(buildAgentsStripText([diagnosticRow('bad-1')], undefined)).toBe('')
+    expect(buildAgentsStripText([diagnosticRow('bad-1')], undefined, '⠋')).toBe('')
   })
 
   it('renders nothing once every subagent has finished — an ephemeral indicator, not a permanent log', () => {
-    expect(buildAgentsStripText([childRow('c1', 'Fix auth bug', 'inactive')], undefined)).toBe('')
+    expect(buildAgentsStripText([childRow('c1', 'Fix auth bug', 'inactive')], undefined, '⠋')).toBe('')
   })
 
   it('stays up if the child just finished is the one currently being viewed, so the reader is never stranded', () => {
-    const text = buildAgentsStripText([childRow('c1', 'Fix auth bug', 'inactive')], 'c1')
+    const text = buildAgentsStripText([childRow('c1', 'Fix auth bug', 'inactive')], 'c1', '⠋')
     expect(text).not.toBe('')
     expect(text).toContain('Fix auth bug')
     expect(text).toContain('←/→') // still carries the way back to main.
@@ -122,42 +122,65 @@ describe('buildAgentsStripText', () => {
 
   it('still shows a finished child as long as a sibling from the same batch is still running', () => {
     const rows = [childRow('c1', 'Fix auth bug', 'inactive'), childRow('c2', 'Reptile cold-blooded evolution', 'running')]
-    const text = buildAgentsStripText(rows, undefined)
+    const text = buildAgentsStripText(rows, undefined, '⠋')
     expect(text).not.toBe('')
     expect(text).toContain('Fix auth bug')
   })
 
   it('always leads with a main segment, before any child', () => {
-    const text = buildAgentsStripText([childRow('c1', 'Fix auth bug')], undefined)
+    const text = buildAgentsStripText([childRow('c1', 'Fix auth bug')], undefined, '⠋')
     expect(text.indexOf('main')).toBeLessThan(text.indexOf('Fix auth bug'))
   })
 
   it('shows every child label, in listChildren order', () => {
     const rows = [childRow('c1', 'Fix auth bug'), childRow('c2', 'Reptile cold-blooded evolution')]
-    const text = buildAgentsStripText(rows, undefined)
+    const text = buildAgentsStripText(rows, undefined, '⠋')
     expect(text).toContain('Fix auth bug')
     expect(text).toContain('Reptile cold-blooded evolution'.slice(0, 23))
   })
 
   it('marks main solid while no detail view is open', () => {
-    const text = buildAgentsStripText([childRow('c1', 'Fix auth bug')], undefined)
+    const text = buildAgentsStripText([childRow('c1', 'Fix auth bug')], undefined, '⠋')
     expect(text).toContain('●')
   })
 
   it('marks the viewed child solid instead of main once its detail view is open', () => {
-    const text = buildAgentsStripText([childRow('c1', 'Fix auth bug')], 'c1')
+    const text = buildAgentsStripText([childRow('c1', 'Fix auth bug')], 'c1', '⠋')
     // One solid circle for the viewed child, one hollow circle for main.
     expect(text.split('●').length - 1).toBe(1)
     expect(text.split('○').length - 1).toBe(1)
   })
 
   it('truncates a long label to the strip cap', () => {
-    const text = buildAgentsStripText([childRow('c1', 'x'.repeat(200))], undefined)
+    const text = buildAgentsStripText([childRow('c1', 'x'.repeat(200))], undefined, '⠋')
     expect(text).toContain('…')
   })
 
+  it('carries the spinner beside a running child, regardless of whether it is the one selected', () => {
+    const text = buildAgentsStripText([childRow('c1', 'Fix auth bug', 'running')], undefined, '⠋')
+    expect(text).toContain('⠋')
+  })
+
+  it('omits the spinner for a finished child', () => {
+    const text = buildAgentsStripText([childRow('c1', 'Fix auth bug', 'inactive')], 'c1', '⠋')
+    expect(text).not.toContain('⠋')
+  })
+
+  it('never puts the spinner on main, even while a child is running', () => {
+    const text = buildAgentsStripText([childRow('c1', 'Fix auth bug', 'running')], undefined, '⠋')
+    // The spinner appears once, attached to the running child — not a second time for main.
+    expect(text.split('⠋').length - 1).toBe(1)
+  })
+
+  it('keeps activity (spinner) and selection (solid circle) independent — a running, unselected child gets both a hollow circle and a spinner', () => {
+    const rows = [childRow('c1', 'Fix auth bug', 'running'), childRow('c2', 'Reptile cold-blooded evolution', 'running')]
+    const text = buildAgentsStripText(rows, 'c2', '⠋') // viewing c2, not c1
+    expect(text).toContain('⠋') // c1's spinner still shows...
+    expect(text).toContain('○') // ...next to a hollow (unselected) circle for c1.
+  })
+
   it('includes the arrow-key hint', () => {
-    expect(buildAgentsStripText([childRow('c1', 'Fix auth bug')], undefined)).toContain('←/→')
+    expect(buildAgentsStripText([childRow('c1', 'Fix auth bug')], undefined, '⠋')).toContain('←/→')
   })
 
   function manyChildren(count: number): SubagentRow[] {
@@ -165,14 +188,14 @@ describe('buildAgentsStripText', () => {
   }
 
   it('shows every child with no hidden-count markers when 4 or fewer exist', () => {
-    const text = buildAgentsStripText(manyChildren(4), undefined)
+    const text = buildAgentsStripText(manyChildren(4), undefined, '⠋')
     for (let i = 0; i < 4; i++) expect(text).toContain(`child-${i}`)
     expect(text).not.toContain('‹')
     expect(text).not.toContain('›')
   })
 
   it('windows down to at most 4 children when more exist, marking the rest hidden', () => {
-    const text = buildAgentsStripText(manyChildren(6), undefined)
+    const text = buildAgentsStripText(manyChildren(6), undefined, '⠋')
     // No selection: the window defaults to the front (indices 0-3).
     for (let i = 0; i < 4; i++) expect(text).toContain(`child-${i}`)
     expect(text).not.toContain('child-4')
@@ -182,13 +205,13 @@ describe('buildAgentsStripText', () => {
   })
 
   it('slides the window to keep the viewed child visible even past the front 4', () => {
-    const text = buildAgentsStripText(manyChildren(6), 'c5')
+    const text = buildAgentsStripText(manyChildren(6), 'c5', '⠋')
     expect(text).toContain('child-5')
     expect(text).toContain('‹') // some earlier children are now hidden instead.
   })
 
   it('keeps main in the strip regardless of which children the window scrolls past', () => {
-    const text = buildAgentsStripText(manyChildren(6), 'c5')
+    const text = buildAgentsStripText(manyChildren(6), 'c5', '⠋')
     expect(text).toContain('main')
   })
 })

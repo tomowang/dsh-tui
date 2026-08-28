@@ -351,7 +351,7 @@ class TuiApp implements TuiHandle {
     // session spawns its first child.
     const agentsStripText = new DynamicText(() => {
       const state = store.getSnapshot()
-      return buildAgentsStripText(state.agentsStrip, state.viewingChild?.childId)
+      return buildAgentsStripText(state.agentsStrip, state.viewingChild?.childId, this.spinner.current())
     })
     const permissionText = new DynamicText(() => buildPermissionText(store.getSnapshot().permission))
     const updateHintText = new DynamicText(() => buildUpdateHintText(options.version, store.getSnapshot().updateHint))
@@ -397,7 +397,12 @@ class TuiApp implements TuiHandle {
       this.appendNewTranscriptItems(state)
       this.updateOverlay(state.overlay)
       this.updateTerminalTitle(state.title)
-      const running = state.status === 'running'
+      // Widened beyond the main turn's own status: a subagent can still be
+      // running while the main agent sits idle (dispatched, then waiting),
+      // and the strip's own spinner (buildAgentsStripText) needs this same
+      // shared Spinner ticking for that case too — otherwise it'd freeze on
+      // a static frame exactly while a child is still visibly working.
+      const running = state.status === 'running' || state.agentsStrip.some(row => row.kind === 'child' && row.activity === 'running')
       if (running !== this.wasRunning) {
         this.wasRunning = running
         if (running) this.spinner.start()
