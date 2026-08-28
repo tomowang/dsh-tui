@@ -182,7 +182,14 @@ class TranscriptArea implements Component {
     if (busy && events.length === 0) lines.push(muted('Loading…'))
     lines.push(...buildAgentDetailLines(events, this.getTool))
     if (events.length === 0 && !busy && error === undefined) lines.push(muted('No transcript yet.'))
-    return lines
+    // padTranscriptText both wraps to width (unlike the raw lines above, a
+    // long line here would otherwise overflow the terminal edge — this is
+    // the same live-region wrapping streamingText/pendingToolCallsText use,
+    // not the main transcript's own cached Text/createTranscriptLine path,
+    // since this is rebuilt fresh from the store every render) and applies
+    // the same left/right margin the main transcript renders with, so
+    // switching between the two doesn't visibly shift the content column.
+    return padTranscriptText(lines.join('\n'), width)
   }
 }
 
