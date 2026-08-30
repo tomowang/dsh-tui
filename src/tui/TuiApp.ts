@@ -21,7 +21,12 @@
  *   store change would be wasteful for a long session — `ScrollView`'s own
  *   viewport culling (confirmed in pi-tui's own test suite: painting a huge
  *   scroll child is O(viewport), not O(content)) is what makes this safe to
- *   grow without bound.
+ *   grow without bound. `documentContainer` isn't wrapped by `ScrollView`
+ *   directly, though — `TranscriptArea` sits between them, swapping in a
+ *   viewed subagent child's own transcript (see `TuiState.viewingChild`,
+ *   the docked agents-strip switcher) without disturbing either the dock
+ *   underneath or `documentContainer`'s own accumulated main-session
+ *   history, which keeps growing regardless of which one is on screen.
  *
  * Overlays (`/model`, `/trajectory`, Ctrl+O tool cards, `/context`,
  * `/plugins`, `/presets`, question) are `tui.showOverlay(...)` calls keyed
@@ -48,7 +53,7 @@ import type { RenderOptions } from '../render.js'
 import { formatEvent, formatPendingToolCalls, formatShellRun, formatShellRunLive, formatStreamingText } from '../render.js'
 import { buildBannerText } from './bannerText.js'
 import { buildContextLine, buildStatsLine } from './statsFormat.js'
-import { buildGoalBarText, buildPermissionText, buildQueuedText, buildStatusBarText, buildTerminalTitle, buildUpdateHintText } from './liveText.js'
+import { buildAgentsStripText, buildGoalBarText, buildPermissionText, buildQueuedText, buildStatusBarText, buildTerminalTitle, buildUpdateHintText } from './liveText.js'
 import { createTranscriptLine, DynamicText, padTranscriptText } from './text.js'
 import { CustomEditor } from './CustomEditor.js'
 import { Spinner } from './Spinner.js'
@@ -61,11 +66,16 @@ import { ToolCardsOverlay } from './toolCards/ToolCardsOverlay.js'
 import { ContextOverlay } from './context/ContextOverlay.js'
 import { PluginsOverlay } from './plugins/PluginsOverlay.js'
 import { AgentPresetsOverlay } from './agentPresets/AgentPresetsOverlay.js'
+import { buildAgentDetailLines } from './agents/detailLines.js'
 import { ResumeOverlay } from './resume/ResumeOverlay.js'
 import { ApprovalOverlay } from './interaction/ApprovalOverlay.js'
 import { QuestionOverlay } from './interaction/QuestionOverlay.js'
 
 const secondary = fg(theme.secondary)
+const muted = fg(theme.muted)
+const errorColor = fg(theme.error)
+const success = fg(theme.success)
+const bold = (s: string): string => `\x1b[1m${s}\x1b[0m`
 
 export interface MountOptions {
   readonly store: TuiStore
@@ -131,6 +141,55 @@ class FullScreenOverlay implements Component {
       padded.push(pad > 0 ? line + ' '.repeat(pad) : line)
     }
     return padded
+  }
+}
+
+/**
+ * The primary scroll region's content. Normally just delegates straight to
+ * `documentContainer` (the main session's append-only transcript); while
+ * `TuiState.viewingChild` is set (the docked agents-strip switcher, see
+ * `buildAgentsStripText`/`cycleAgentsStrip`), renders that child's own
+ * read-only transcript instead — via the same `formatEvent` renderer,
+ * reusing `buildAgentDetailLines`. Recomputed fresh on every render rather
+ * than incrementally appended like `documentContainer`: a subagent
+ * transcript is bounded to one task, not a whole long-lived session, so the
+ * `<Static>`-style optimization that makes the main transcript cheap to
+ * grow without bound isn't needed here.
+ *
+ * `documentContainer` keeps accumulating the main session's history
+ * underneath either way (`appendNewTranscriptItems` doesn't know or care
+ * whether it's currently visible), so switching back to main always shows
+ * it fully caught up.
+ */
+class TranscriptArea implements Component {
+  constructor(
+    private readonly documentContainer: Container,
+    private readonly store: TuiStore,
+    private readonly getTool: RenderOptions['getTool'],
+  ) {}
+
+  invalidate(): void {
+    this.documentContainer.invalidate()
+  }
+
+  render(width: number): string[] {
+    const viewingChild = this.store.getSnapshot().viewingChild
+    if (viewingChild === undefined) return this.documentContainer.render(width)
+    const { label, events, live, busy, error } = viewingChild
+    const statusTag = live ? success('● live') : muted('finished')
+    const lines: string[] = [`${bold(secondary(`Subagent — ${label}`))} ${statusTag}`]
+    if (error !== undefined) lines.push(errorColor(error))
+    if (busy && events.length === 0) lines.push(muted('Loading…'))
+    lines.push(...buildAgentDetailLines(events, this.getTool))
+    if (events.length === 0 && !busy && error === undefined) lines.push(muted('No transcript yet.'))
+    // padTranscriptText both wraps to width (unlike the raw lines above, a
+    // long line here would otherwise overflow the terminal edge — this is
+    // the same live-region wrapping streamingText/pendingToolCallsText use,
+    // not the main transcript's own cached Text/createTranscriptLine path,
+    // since this is rebuilt fresh from the store every render) and applies
+    // the same left/right margin the main transcript renders with, so
+    // switching between the two doesn't visibly shift the content column.
+    return padTranscriptText(lines.join('\n'), width)
   }
 }
 
@@ -237,13 +296,15 @@ class TuiApp implements TuiHandle {
     this.documentContainer.addChild(
       new DynamicText(width => buildBannerText({ version: options.version, provider: options.provider, model: options.model, cwd: options.cwd }, width)),
     )
-    const transcriptScrollView = new ScrollView(this.documentContainer, { follow: 'end', primary: true, overscroll: 'chain' })
+    const transcriptArea = new TranscriptArea(this.documentContainer, store, options.getTool)
+    const transcriptScrollView = new ScrollView(transcriptArea, { follow: 'end', primary: true, overscroll: 'chain' })
 
     this.editor = new CustomEditor(this.tui, actions, {
       getStatus: () => store.getSnapshot().status,
       history: options.promptHistory,
       getFileCandidates: () => this.waitForFileIndex(),
       getTitle: () => store.getSnapshot().title,
+      isViewingChild: () => store.getSnapshot().viewingChild !== undefined,
     })
 
     const noticeText = new DynamicText(() => {
@@ -284,6 +345,14 @@ class TuiApp implements TuiHandle {
         spinnerChar: this.spinner.current(),
       })
     })
+    // Docked directly below the composer, Claude Code CLI-style — a
+    // solid/hollow-circle switcher for the session's subagent children, kept
+    // fresh by `refreshAgentsStrip` in `index.ts`. Renders nothing until the
+    // session spawns its first child.
+    const agentsStripText = new DynamicText(() => {
+      const state = store.getSnapshot()
+      return buildAgentsStripText(state.agentsStrip, state.viewingChild?.childId, this.spinner.current())
+    })
     const permissionText = new DynamicText(() => buildPermissionText(store.getSnapshot().permission))
     const updateHintText = new DynamicText(() => buildUpdateHintText(options.version, store.getSnapshot().updateHint))
     const statsLineText = new DynamicText(() => {
@@ -304,6 +373,7 @@ class TuiApp implements TuiHandle {
         statusBarText,
         this.approvalSlot,
         this.editor,
+        agentsStripText,
         permissionText,
         updateHintText,
         statsLineText,
@@ -327,7 +397,12 @@ class TuiApp implements TuiHandle {
       this.appendNewTranscriptItems(state)
       this.updateOverlay(state.overlay)
       this.updateTerminalTitle(state.title)
-      const running = state.status === 'running'
+      // Widened beyond the main turn's own status: a subagent can still be
+      // running while the main agent sits idle (dispatched, then waiting),
+      // and the strip's own spinner (buildAgentsStripText) needs this same
+      // shared Spinner ticking for that case too — otherwise it'd freeze on
+      // a static frame exactly while a child is still visibly working.
+      const running = state.status === 'running' || state.agentsStrip.some(row => row.kind === 'child' && row.activity === 'running')
       if (running !== this.wasRunning) {
         this.wasRunning = running
         if (running) this.spinner.start()

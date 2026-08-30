@@ -56,6 +56,7 @@ import type {} from '@deepseek-ai/dsh-session-stats'
 // (`TuiApp`'s `updateTerminalTitle`) reads, and `/rename`'s empty-title
 // rejection.
 import { foldSessionTitle, SessionTitleInvalidError } from '@deepseek-ai/dsh-session-title'
+import type { SubagentListEntry } from '@deepseek-ai/dsh-subagent'
 // Type-only: resolves ctx.sessionPersistence for the /resume picker's
 // cwd-scoped past-session listing.
 import type {} from '@deepseek-ai/dsh-session-persistence'
@@ -65,7 +66,7 @@ import { ensureSessionIdPrefix, stripSessionIdPrefix } from './sessionId.js'
 import { textOf } from './render.js'
 import { collectRenameSourceTexts, TITLE_GENERATION_SYSTEM_PROMPT, toKebabCase } from './tui/titleGeneration.js'
 import { SLASH_COMMANDS, SLASH_COMMAND_WIDTH } from './tui/commands.js'
-import { goalPhaseLabel } from './tui/liveText.js'
+import { agentsStripIsVisible, goalPhaseLabel } from './tui/liveText.js'
 import { TuiStore } from './tui/store.js'
 import type { ModelProfileOverlayState, PermissionState, PresetState, StatsSnapshot } from './tui/store.js'
 import { mountTui, restoreActiveTerminal, type TuiHandle } from './tui/TuiApp.js'
@@ -76,6 +77,7 @@ import { checkForUpdate } from './updateCheck.js'
 import type { ProviderDraft, ProviderRow, StoredProviderProfile } from './tui/modelProfile/types.js'
 import type { PluginRow } from './tui/plugins/types.js'
 import type { AgentPresetRow } from './tui/agentPresets/types.js'
+import type { SubagentRow } from './tui/agents/types.js'
 import type { SessionResumeRow } from './tui/resume/types.js'
 import { selectResumeCandidates } from './tui/resume/select.js'
 import type { QuestionAnswer, QuestionOptionRow } from './tui/interaction/types.js'
@@ -166,6 +168,19 @@ function presetRowLabel(preset: AgentPreset): string {
 /** Whether `session` has run no turn yet — the only state a preset switch is accepted in, mirroring the harness's own `sessionBlank`. */
 function sessionBlank(session: Session): boolean {
   return !session.events.some(event => event.type === 'turn/start')
+}
+
+/** Join one `ctx.subagents.listChildren()` entry into the agents-strip's plain row shape. */
+function toSubagentRow(entry: SubagentListEntry): SubagentRow {
+  if (entry.kind === 'diagnostic') return { kind: 'diagnostic', id: entry.id, diagnostic: entry.reason }
+  return {
+    kind: 'child',
+    id: entry.id,
+    label: entry.mode === 'one-shot' ? entry.label ?? entry.id : entry.label,
+    mode: entry.mode,
+    activity: entry.activity,
+    hasChildren: entry.hasChildren,
+  }
 }
 
 // --- `/goal` helpers, mirroring `@deepseek-ai/dsh-command-goal`'s own handler ---
@@ -309,6 +324,10 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
   // roster just shows no preset in the status bar and tells the reader
   // /presets is unavailable instead of refusing to start.
   const presets = ctx.get('agentPresets')
+  // Same optional-service pattern: a profile without the subagent runtime
+  // just leaves the docked agents-strip switcher permanently empty instead
+  // of refusing to start.
+  const subagents = ctx.get('subagents')
   // Same optional-service pattern: a profile without durable session
   // persistence just tells the reader /resume's picker is unavailable
   // instead of refusing to start (`/resume <id>` itself still works — it
@@ -490,6 +509,65 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
     }
   }
 
+  /** Stop the live event subscription backing an open agent-detail view, if any; safe to call when none is active. */
+  function stopAgentDetailStream(): void {
+    current.agentDetailUnsubscribe?.()
+    current.agentDetailUnsubscribe = undefined
+  }
+
+  /**
+   * Start viewing one subagent child's own transcript, read-only, in the
+   * primary scroll region (see `TranscriptArea` in `TuiApp`) — the composer
+   * and agents strip stay live underneath the whole time. A child still
+   * live in `ctx.sessions` (`sessions.get`) streams further events as they
+   * land,
+   * subscribed the same way the main session's own transcript is (see the
+   * `session/event` listener in `attachSession`); a child that's already
+   * finished — or vanished between `listChildren`'s snapshot and this call —
+   * falls back to its persisted log via `ctx.sessionPersistence`, the same
+   * call `loadResumeSessions` makes.
+   *
+   * `childId` is used as-is, with no `ensureSessionIdPrefix` — unlike a
+   * top-level session id, a subagent child's id is a bare id with no
+   * `session-` prefix to begin with (confirmed against both `ctx.sessions`'
+   * live keys and the on-disk persisted directory), so prefixing it would
+   * look up a session that doesn't exist under either name.
+   */
+  async function loadAgentDetail(childId: string): Promise<void> {
+    stopAgentDetailStream()
+    const sessionId = SessionId(childId)
+    const liveSession = sessions.get(sessionId)
+    if (liveSession !== undefined) {
+      current.store.updateViewingChild({ events: liveSession.events, live: true, busy: false, error: undefined })
+      current.agentDetailUnsubscribe = ctx.on('session/event', (session, event) => {
+        if (session !== liveSession) return
+        current.store.appendViewingChildEvent(event)
+      })
+      return
+    }
+    if (sessionPersistence === undefined) {
+      current.store.updateViewingChild({
+        busy: false,
+        error: 'no durable session persistence in this profile — a finished subagent transcript is unavailable',
+      })
+      return
+    }
+    try {
+      const inspected = await sessionPersistence.inspect(sessionId)
+      // The reader may have cycled to a different child (or back to main)
+      // while this awaited — an older, slower inspect() landing after a
+      // newer one would otherwise silently overwrite the transcript
+      // actually being viewed with a stale one. There's no cancellation on
+      // sessionPersistence.inspect() itself, so this just discards a result
+      // nothing wants any more rather than applying it.
+      if (current.store.getSnapshot().viewingChild?.childId !== childId) return
+      current.store.updateViewingChild({ events: inspected.events, live: false, busy: false, error: undefined })
+    } catch (error) {
+      if (current.store.getSnapshot().viewingChild?.childId !== childId) return
+      current.store.updateViewingChild({ busy: false, error: error instanceof Error ? error.message : String(error) })
+    }
+  }
+
   /**
    * Fetch this cwd's past sessions (headers only — cheap, no full-log parse)
    * and refresh the open `/resume` overlay's row list. A header alone has no
@@ -621,6 +699,8 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
     readonly disposeAgent: () => Promise<void>
     readonly unsubscribers: readonly (() => unknown)[]
     closing: boolean
+    /** Disposer for an open agent-detail view's live `session/event` subscription, set by `loadAgentDetail`/cleared by `stopAgentDetailStream`; `undefined` when no detail view is watching a running child. */
+    agentDetailUnsubscribe: (() => unknown) | undefined
   }
 
   // --- In-terminal approval/question answerers ------------------------------
@@ -905,6 +985,27 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
     store.setPreset(currentPresetState(agent.session))
     if (presetNotice !== undefined) store.setNotice(presetNotice)
 
+    /**
+     * Refresh the docked agents-strip roster (see `buildAgentsStripText` in
+     * `TuiApp`) from `ctx.subagents.listChildren`. Best-effort: a transient
+     * failure just leaves the strip as it was — the next `tool/call`/
+     * `tool/result` on this session retries.
+     *
+     * `listChildren` orders its result oldest-created first; reversed here
+     * so the strip reads latest-spawned first (a still-running child is
+     * ordinarily among the most recent, so this alone surfaces it without
+     * pinning it separately).
+     */
+    const refreshAgentsStrip = (): void => {
+      if (subagents === undefined) return
+      void subagents.listChildren(agent.session.id)
+        .then(entries => store.setAgentsStrip(entries.toReversed().map(toSubagentRow)))
+        .catch(() => {
+          // Best-effort background refresh with no user-facing error surface.
+        })
+    }
+    refreshAgentsStrip() // Seed: a --resume'd session may already have children.
+
     const resnapshotQueue = (): void => {
       store.setQueued([...agent.inbox.nextStep, ...agent.inbox.nextTurn])
     }
@@ -917,6 +1018,13 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
         }
         if (event.type === 'agent-preset/selected') {
           store.setPreset(currentPresetState(agent.session))
+        }
+        // A subagent child is created and finished via this session's own
+        // tool/call+tool/result pair (spawning is a tool call) — the
+        // harness exposes no dedicated child-lifecycle event to subscribe
+        // to instead.
+        if (event.type === 'tool/call' || event.type === 'tool/result') {
+          refreshAgentsStrip()
         }
       }),
       ctx.on('agent/status', (payload) => {
@@ -1369,6 +1477,36 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
           })
       },
 
+      cycleAgentsStrip(direction) {
+        const snapshot = store.getSnapshot()
+        const currentId = snapshot.viewingChild?.childId
+        // Mirrors buildAgentsStripText's own visibility rule: once a batch
+        // has fully settled and nothing is being viewed, the strip has
+        // nothing to offer, so cycling must not be able to jump to a child
+        // it never visibly showed.
+        if (!agentsStripIsVisible(snapshot.agentsStrip, currentId)) return
+        const childIds = snapshot.agentsStrip.filter(row => row.kind === 'child').map(row => row.id)
+        if (childIds.length === 0) return
+        // `undefined` stands for "main" — always the first position.
+        const positions: (string | undefined)[] = [undefined, ...childIds]
+        // The extra `+ positions.length` keeps the modulo result non-negative for direction -1.
+        const nextIndex = (positions.indexOf(currentId) + direction + positions.length) % positions.length
+        const next = positions[nextIndex]
+        if (next === undefined) {
+          stopAgentDetailStream()
+          store.stopViewingChild()
+          return
+        }
+        const row = snapshot.agentsStrip.find(candidate => candidate.id === next)
+        const label = row !== undefined && row.kind === 'child' ? row.label : next
+        store.startViewingChild({ childId: next, label })
+        void loadAgentDetail(next)
+      },
+      closeAgentDetail() {
+        stopAgentDetailStream()
+        store.stopViewingChild()
+      },
+
       answerApproval(outcome) {
         if (activeInteraction?.kind !== 'approval') return
         activeInteraction.settle(outcome)
@@ -1396,7 +1534,7 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
     })
     mounted.instance = instance
 
-    return { agent, store, instance, disposeAgent: dispose, unsubscribers, closing: false }
+    return { agent, store, instance, disposeAgent: dispose, unsubscribers, closing: false, agentDetailUnsubscribe: undefined }
   }
 
   let current = await attachSession(config.resume)
@@ -1432,6 +1570,7 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
     await old.agent.whenIdle()
     await sessions.flush(old.agent.session)
     await old.disposeAgent()
+    old.agentDetailUnsubscribe?.()
     for (const off of old.unsubscribers) off()
     // `preserveScreen: true`: a fresh `TuiAltScreen` immediately re-enters
     // the alternate screen over the same terminal, so the old instance skips

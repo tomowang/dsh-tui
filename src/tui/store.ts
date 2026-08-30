@@ -17,6 +17,7 @@ import type { ContextBreakdownProjection, ContextPressureProjection, TokenUsageP
 import type { DiscoveredModel, ProviderDraft, ProviderRow } from './modelProfile/types.js'
 import type { PluginRow } from './plugins/types.js'
 import type { AgentPresetRow } from './agentPresets/types.js'
+import type { SubagentRow } from './agents/types.js'
 import type { SessionResumeRow } from './resume/types.js'
 import type { ApprovalPromptState, QuestionPromptState } from './interaction/types.js'
 import { reasoningOf, textOf } from '../render.js'
@@ -47,6 +48,39 @@ export interface AgentPresetsOverlayState {
   readonly current: string | undefined
   /** Whether the session has run no turn yet — the only state a preset switch is accepted in. */
   readonly blank: boolean
+  readonly busy: boolean
+  readonly error: string | undefined
+}
+
+/** Overlay-owned state for the `/resume` session picker. */
+export interface ResumeOverlayState {
+  /** Joined past-session listing for the current cwd, newest first; empty while the first load is still in flight (see `busy`). */
+  readonly rows: readonly SessionResumeRow[]
+  readonly selected: number
+  readonly busy: boolean
+  readonly error: string | undefined
+}
+
+/**
+ * One subagent child's own read-only transcript, opened from the docked
+ * agents-strip switcher (see `buildAgentsStripText`/`cycleAgentsStrip`),
+ * mirroring Claude Code CLI's subagent-focus view. Deliberately NOT part of
+ * `Overlay` — unlike a `showOverlay` panel, viewing a child swaps only the
+ * primary scroll region's content (see `TranscriptArea` in `TuiApp`); the
+ * composer, agents strip, and status rows stay live underneath so the
+ * reader can switch to another child, or back to main, without backing out
+ * first. `live: true` means `events` is still receiving further entries as
+ * the child runs (see `subscribeAgentDetail`/`appendViewingChildEvent`);
+ * `false` means it's a fixed snapshot of an already-finished child.
+ */
+export interface ViewingChildState {
+  /** The subagent child's session id. */
+  readonly childId: string
+  /** Display label carried over from the agents-strip roster. */
+  readonly label: string
+  /** The child's own session log so far. */
+  readonly events: readonly SessionEvent[]
+  readonly live: boolean
   readonly busy: boolean
   readonly error: string | undefined
 }
@@ -178,6 +212,10 @@ export interface TuiState {
   readonly fileIndex: FileIndexState
   /** A newer npm-published version of this package, once the startup registry check (`src/updateCheck.ts`) resolves one; `undefined` while unchecked or already current. */
   readonly updateHint: string | undefined
+  /** Live roster backing the docked agents-strip switcher (see `buildAgentsStripText`); empty when `ctx.subagents` isn't composed or the session has spawned no children yet. */
+  readonly agentsStrip: readonly SubagentRow[]
+  /** The subagent child whose own transcript currently fills the primary scroll region, or `undefined` while the main transcript is shown — see `ViewingChildState`. */
+  readonly viewingChild: ViewingChildState | undefined
 }
 
 /** The `@`-mention dropdown's backing file list, loaded lazily on first use (see `ensureFileIndex` in `src/index.ts`). */
@@ -244,6 +282,8 @@ export class TuiStore {
       shellHistory: [],
       fileIndex: EMPTY_FILE_INDEX,
       updateHint: undefined,
+      agentsStrip: [],
+      viewingChild: undefined,
     }
   }
 
@@ -455,6 +495,30 @@ export class TuiStore {
     this.updateAgentPresets({ selected: index })
   }
 
+  /** Start viewing one child's own transcript in the primary scroll region, replacing whichever (if any) was shown before, to a fresh, loading view. */
+  startViewingChild(init: { childId: string; label: string }): void {
+    this.set({
+      viewingChild: { childId: init.childId, label: init.label, events: [], live: false, busy: true, error: undefined },
+    })
+  }
+
+  /** Patch the viewed child's sub-state; a no-op once viewing has stopped. */
+  updateViewingChild(patch: Partial<ViewingChildState>): void {
+    if (this.state.viewingChild === undefined) return
+    this.set({ viewingChild: { ...this.state.viewingChild, ...patch } })
+  }
+
+  /** Append one further live event to the viewed child's transcript; a no-op once viewing has moved on (stopped, or switched to a different child). */
+  appendViewingChildEvent(event: SessionEvent): void {
+    if (this.state.viewingChild === undefined) return
+    this.updateViewingChild({ events: [...this.state.viewingChild.events, event] })
+  }
+
+  /** Stop viewing a child's transcript, restoring the main transcript in the primary scroll region. */
+  stopViewingChild(): void {
+    this.set({ viewingChild: undefined })
+  }
+
   /** Patch the open `/resume` overlay's sub-state; a no-op once it's closed. */
   updateResume(patch: Partial<ResumeOverlayState>): void {
     if (this.state.overlay.kind !== 'resume') return
@@ -480,6 +544,11 @@ export class TuiStore {
   /** Record a newer npm-published version found by the startup update check; persists for the session (not cleared by `/clear`'s notice reset) until dismissed by a fresh check finding none. */
   setUpdateHint(version: string | undefined): void {
     this.set({ updateHint: version })
+  }
+
+  /** Refresh the docked agents-strip roster; see `refreshAgentsStrip` in `index.ts` for when this fires. */
+  setAgentsStrip(rows: readonly SubagentRow[]): void {
+    this.set({ agentsStrip: rows })
   }
 
   private set(partial: Partial<TuiState>): void {

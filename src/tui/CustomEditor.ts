@@ -38,6 +38,8 @@ export interface CustomEditorDeps {
   readonly getFileCandidates: GetFileCandidates
   /** Current session title (the 'title' projection: `null` before one lands, `undefined` without `dsh-session-title` composed), for the box's top-border label. */
   readonly getTitle: () => string | null | undefined
+  /** Whether a subagent child's own transcript currently fills the primary scroll region (the docked agents-strip switcher) — gates the empty-prompt Left/Right/Escape strip-navigation bindings below. */
+  readonly isViewingChild: () => boolean
 }
 
 export class CustomEditor extends Editor {
@@ -158,6 +160,14 @@ export class CustomEditor extends Editor {
       this.actions.openToolCards()
       return
     }
+    // Left/Right move the docked agents-strip switcher, but only while the
+    // prompt is empty — at that point neither key has anything to move a
+    // cursor through, so claiming them here can't take anything away from
+    // normal editing. A no-op with no subagent children.
+    if (this.getText() === '' && (matchesKey(data, Key.left) || matchesKey(data, Key.right))) {
+      this.actions.cycleAgentsStrip(matchesKey(data, Key.right) ? 1 : -1)
+      return
+    }
     // A leading `!` at an empty prompt is Claude Code's shell-mode
     // convention: it's consumed rather than inserted, so Backspace on an
     // empty shell-mode buffer (which would otherwise no-op) exits it — same
@@ -170,6 +180,13 @@ export class CustomEditor extends Editor {
     if (this.shellMode && (matchesKey(data, Key.escape) || (matchesKey(data, Key.backspace) && this.getText() === ''))) {
       this.setShellMode(false)
       this.tui.requestRender()
+      return
+    }
+    // Escape backs out of a viewed subagent's transcript to main, same
+    // empty-prompt gating as Left/Right above — shell mode's own Escape
+    // handling (just above) still wins when both apply.
+    if (this.getText() === '' && this.deps.isViewingChild() && matchesKey(data, Key.escape)) {
+      this.actions.closeAgentDetail()
       return
     }
     // Shift+Tab cycles the permission preset, mirroring Claude Code's mode switcher.

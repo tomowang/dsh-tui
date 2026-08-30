@@ -91,6 +91,11 @@ export interface TuiActions {
   /** Apply a different agent preset to the current (blank) session. */
   applyAgentPreset(id: string): void
 
+  /** Move the docked agents-strip switcher by one position (main, then each subagent child latest-spawned first, wrapping around), opening/closing the agent-detail view as needed. `1` moves forward, `-1` moves back. A no-op while the session has spawned no subagent children. */
+  cycleAgentsStrip(direction: 1 | -1): void
+  /** Close the open agent-detail view, returning to the main transcript. */
+  closeAgentDetail(): void
+
   /** Open the `/resume` session picker and start loading this cwd's past sessions. */
   openResume(): void
   /** Close the `/resume` picker without resuming anything. */

@@ -15,9 +15,11 @@ import type { UserMessage } from '@deepseek-ai/dsh-session'
 import { truncate } from '../render.js'
 import { stripSessionIdPrefix } from '../sessionId.js'
 import type { PermissionState } from './store.js'
+import type { SubagentRow } from './agents/types.js'
 import { theme, fg } from './theme.js'
 
 const dim = fg(theme.muted)
+const success = fg(theme.success)
 const accent = fg(theme.accent)
 const warning = fg(theme.warning)
 
@@ -101,6 +103,90 @@ export function buildPermissionText(permission: PermissionState | undefined): st
   const label = PERMISSION_LABELS[permission.current] ?? permission.current
   const color = fg(PERMISSION_COLORS[permission.current] ?? theme.muted)
   return `${color(`${icon} ${label}`)}${dim(' (shift+tab to cycle)')}`
+}
+
+/** Per-segment label cap, so one long subagent title can't dominate the strip's single line. */
+const AGENTS_STRIP_LABEL_LIMIT = 24
+
+/** Children shown at once — main plus this many, five segments total, so the strip never grows past one glanceable line. */
+const AGENTS_STRIP_MAX_VISIBLE_CHILDREN = 4
+
+/**
+ * A window of at most `size` children out of `children`, sliding to keep
+ * `viewedIndex` inside it (biased slightly toward the front, so cycling
+ * forward reveals more of what's ahead) — `main` never scrolls out of view,
+ * only the child window does, and it's positioned fresh from `viewedIndex`
+ * on every call rather than carried over from a previous render, so it
+ * always reflects exactly where the reader currently is.
+ */
+function slidingWindow<T>(children: readonly T[], viewedIndex: number, size: number): { start: number; end: number } {
+  if (children.length <= size) return { start: 0, end: children.length }
+  const centered = viewedIndex === -1 ? 0 : viewedIndex - Math.floor((size - 1) / 2)
+  const start = Math.max(0, Math.min(centered, children.length - size))
+  return { start, end: start + size }
+}
+
+/**
+ * Whether the docked strip has anything to offer right now — the exact
+ * rule `buildAgentsStripText` renders by, exported so `cycleAgentsStrip`
+ * (`index.ts`) can refuse to navigate to a child the strip never visibly
+ * offered in the first place, instead of the two silently drifting apart.
+ */
+export function agentsStripIsVisible(rows: readonly SubagentRow[], viewingChildId: string | undefined): boolean {
+  return rows.some(row => row.kind === 'child' && row.activity === 'running') || viewingChildId !== undefined
+}
+
+/**
+ * The docked subagent switcher, directly below the composer — Claude Code
+ * CLI's own solid/hollow-circle session picker. `main` is always the first
+ * segment and never scrolls away; up to `AGENTS_STRIP_MAX_VISIBLE_CHILDREN`
+ * subagent children follow, latest-spawned first (see `refreshAgentsStrip`
+ * in `index.ts`). Two independent signals, deliberately not conflated into
+ * one: the circle is solid when its own transcript is the one currently
+ * filling the primary scroll region (`TuiState.viewingChild`) — navigation
+ * state — and a running child additionally carries `spinnerChar` right
+ * after its circle, regardless of whether it's the one selected — activity
+ * state. A child already finished carries neither the spinner nor any
+ * other marker beyond its (possibly dim) circle. With more children than
+ * fit, a dim `‹N`/`N›` count marks however many sit before/after the
+ * visible window instead of just letting them drop off the line
+ * unannounced — and the window itself slides to keep whichever child is
+ * currently viewed inside it, so every child stays reachable by cycling
+ * (`cycleAgentsStrip`) even past the fifth. Renders nothing unless at least
+ * one child is currently `running` OR a child's transcript is the one
+ * currently open — mirroring Claude Code CLI's own ephemeral
+ * background-task indicator, this is about the current batch of active
+ * work, not a permanent log of every subagent the session has ever
+ * spawned, but the reader mid-navigation away from main can't be left
+ * stranded either: if the very child being viewed is the one that just
+ * finished, the strip (and its Escape/arrow hint) must stay up until they
+ * actually leave, even though nothing is `running` any more by then. A
+ * child that's already finished otherwise still shows (and stays
+ * reachable) as long as a sibling from the same batch is still running;
+ * once the whole batch settles and nothing is being viewed, the strip
+ * disappears entirely, including the finished siblings' segments.
+ * @param rows - the live agents-strip roster (`TuiState.agentsStrip`); only `child` rows render as segments — a `diagnostic` row has no transcript to switch to.
+ * @param viewingChildId - `TuiState.viewingChild`'s child id, or `undefined` while the main transcript is shown (see `cycleAgentsStrip` in `index.ts`).
+ * @param spinnerChar - the shared status-bar `Spinner`'s current frame (see `TuiApp`'s widened running check, which keeps it ticking while any subagent — not just the main turn — is active), shown beside a running child's circle.
+ */
+export function buildAgentsStripText(rows: readonly SubagentRow[], viewingChildId: string | undefined, spinnerChar: string): string {
+  if (!agentsStripIsVisible(rows, viewingChildId)) return ''
+  const children = rows.filter((row): row is Extract<SubagentRow, { kind: 'child' }> => row.kind === 'child')
+  const segment = (id: string | undefined, label: string, running: boolean): string => {
+    const active = id === viewingChildId
+    const circle = active ? success('●') : dim('○')
+    const activityTag = running ? ` ${success(spinnerChar)}` : ''
+    return `${circle}${activityTag} ${active ? label : dim(label)}`
+  }
+  const viewedIndex = viewingChildId === undefined ? -1 : children.findIndex(child => child.id === viewingChildId)
+  const { start, end } = slidingWindow(children, viewedIndex, AGENTS_STRIP_MAX_VISIBLE_CHILDREN)
+  const segments = [
+    segment(undefined, 'main', false),
+    ...(start > 0 ? [dim(`‹${start}`)] : []),
+    ...children.slice(start, end).map(child => segment(child.id, truncate(child.label, AGENTS_STRIP_LABEL_LIMIT), child.activity === 'running')),
+    ...(end < children.length ? [dim(`${children.length - end}›`)] : []),
+  ]
+  return `${segments.join('  ')}${dim('  (←/→ to switch, when prompt is empty)')}`
 }
 
 /** Human label for one durable goal phase — the single source of truth shared by the `/goal` notice (`index.ts`) and this strip. */
