@@ -64,11 +64,12 @@ dsh plugin --profile tui add @tomowang/dsh-tui
 # 3. Run
 dsh --profile tui
 dsh --profile tui --resume <sessionId>           # reopen a persisted session
+dsh --profile tui --resume                       # pick a past session from a list, newest first
 dsh --profile tui --agent-preset <presetId>      # start a fresh session on a given preset
 dsh --profile tui --dump-config                  # inspect the composed plugin tree
 ```
 
-Any row `--dump-config` prints — the model adapter, tool set, sandbox policy, this TUI's own config — can be overridden from the profile's `cordis.patch.yml` without touching this package. `--agent-preset` is a `dsh`-launcher flag (parsed by `tui-startup`, not `--dump-config` above) that only applies to a fresh session; it's ignored together with `--resume`, and is a no-op with a startup notice on profiles that don't mount `dsh-agent-presets`.
+Any row `--dump-config` prints — the model adapter, tool set, sandbox policy, this TUI's own config — can be overridden from the profile's `cordis.patch.yml` without touching this package. `--agent-preset` is a `dsh`-launcher flag (parsed by `tui-startup`, not `--dump-config` above) that only applies to a fresh session; it's ignored together with `--resume`, and is a no-op with a startup notice on profiles that don't mount `dsh-agent-presets`. `--resume` with no id opens the same session picker as bare `/resume` below.
 
 ## Terminal commands
 

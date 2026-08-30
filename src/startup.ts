@@ -20,8 +20,12 @@ export const TUI_STARTUP_SERVICE = 'tuiStartup'
 
 /** What the runner row reads from {@link TUI_STARTUP_SERVICE}. */
 export interface TuiStartupValues {
-  /** Session id to resume; `undefined` starts a fresh session. */
-  resume: string | undefined
+  /**
+   * Session id to resume; `undefined` starts a fresh session; `true` is
+   * `--resume` given with no id, which opens the session picker instead of
+   * resuming a specific one.
+   */
+  resume: string | true | undefined
   /** Agent preset id to compose a fresh session from; `undefined` uses the deployment's default. Ignored when resuming. */
   agentPreset: string | undefined
 }
@@ -35,12 +39,13 @@ function tuiCommand(): Command {
     .name('dsh --profile tui')
     .description('Interactive terminal session over the dsh agent.')
     .helpOption('-h, --help', 'show this help')
-    .option('--resume <sessionId>', 'resume a persisted session by id')
+    .option('--resume [sessionId]', 'resume a persisted session by id; with no id, opens a picker of past sessions')
     .option('--agent-preset <id>', 'select an agent preset for a fresh session (e.g. standard, code, minimal, cordis)')
     .addHelpText('after', `
 Examples:
   dsh --profile tui                          start a fresh interactive session
   dsh --profile tui --resume <sessionId>     reopen a persisted session
+  dsh --profile tui --resume                 pick a past session from a list
   dsh --profile tui --agent-preset code      start a fresh session on the "code" preset
 `)
 }
@@ -54,7 +59,10 @@ Examples:
 export function apply(ctx: Context): void {
   const program = tuiCommand()
   program.action(() => {
-    const options = program.opts<{ resume?: string; agentPreset?: string }>()
+    // Commander's own quirk for an optional-value option (`[sessionId]`):
+    // absent entirely -> `undefined`; given bare (`--resume`) -> `true`;
+    // given with a value -> that string.
+    const options = program.opts<{ resume?: string | true; agentPreset?: string }>()
     ctx.provide(TUI_STARTUP_SERVICE, { resume: options.resume, agentPreset: options.agentPreset } satisfies TuiStartupValues)
   })
   parseCmdline(ctx, program)

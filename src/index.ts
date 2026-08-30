@@ -237,14 +237,18 @@ function goalMissingNotice(action: string): string {
 
 /** Plugin config: startup values resolved from this app's provider service. */
 export interface Config {
-  /** Session id to resume; absent starts a fresh session. */
-  resume?: string
+  /**
+   * Session id to resume; absent starts a fresh session; `true` is
+   * `--resume` given with no id, which opens the session picker instead of
+   * resuming a specific one.
+   */
+  resume?: string | boolean
   /** Agent preset id to compose a fresh session from; absent uses the deployment's default. Ignored when resuming. */
   agentPreset?: string
 }
 
 export const Config: z<Config> = z.object({
-  resume: z.string(),
+  resume: z.union([z.string(), z.boolean()]),
   agentPreset: z.string(),
 })
 
@@ -1537,7 +1541,20 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
     return { agent, store, instance, disposeAgent: dispose, unsubscribers, closing: false, agentDetailUnsubscribe: undefined }
   }
 
-  let current = await attachSession(config.resume)
+  let current = await attachSession(typeof config.resume === 'string' ? config.resume : undefined)
+
+  // `dsh --profile tui --resume` (no id) opens the same picker bare
+  // `/resume` opens, against the fresh session `attachSession` just mounted
+  // above — attaching is what stands up the Ink tree in the first place, so
+  // there's no cheaper way to show a picker before one exists.
+  if (config.resume === true) {
+    if (sessionPersistence === undefined) {
+      current.store.setNotice('the session picker is not available in this profile; use --resume <sessionId>')
+    } else {
+      current.store.openResume()
+      void loadResumeSessions()
+    }
+  }
 
   // Fire-and-forget, once per process (not re-run on `/clear`): routes
   // through whichever session's store is current when the registry check
