@@ -36,6 +36,8 @@ An open-source terminal front door for [DeepSeek Harness](https://github.com/dee
 - **Goal mode** — `/goal <objective>` sets a long-running goal shown as a live dock strip (phase + objective, hiding on completion like the web portal); `/goal clear|edit <objective>|pause|resume` manages it, and automatic continuation rounds keep running in this same session while the goal is active and armed.
 - **Docked subagent switcher** — whenever at least one subagent in the current batch is running, a solid/hollow-circle strip docks directly below the composer (Claude Code CLI-style): `←`/`→`, while the prompt is empty, switch which transcript the main scroll region shows — main, or any subagent child, latest-spawned first — without hiding the composer or the strip itself, and `Esc` returns to main. A running child additionally carries a live spinner beside its circle, independent of which one is currently selected — solid/hollow marks navigation (what you're looking at), the spinner marks activity (what's still working), so the two never get confused with each other. With more than 4 children, a dim `‹N`/`N›` count marks whatever the visible window doesn't fit, sliding to keep whichever one is open inside it as you cycle. The strip is a live indicator of the current batch of active work, not a permanent log — it disappears once everything settles and nothing is being viewed.
 - **Manual compaction** — `/compact` summarizes and compacts session history on demand.
+- **Session rename** — `/rename <title>` sets an explicit title; bare `/rename` generates one from the conversation so far via one on-demand model call, as a kebab-case slug (Claude Code CLI's own convention, e.g. `fix-auth-bug`) rather than the harness's own natural-language default. The accepted title also shows right-aligned in the prompt box's own top border, alongside the terminal window/tab title.
+- **Session resume** — `/resume <sessionId>` switches to a persisted session in a fresh screen (falling back to a brand-new session with a notice on an unknown id); bare `/resume` opens a picker of this working directory's past sessions instead — newest first, each with its folded title where one landed.
 - **Persisted prompt history** — submitted lines are saved across processes and `/clear`, recalled with `↑`/`↓`.
 - **Readline-style input** — word/line motion, kill/yank-style deletes, multi-line drafts, and shell-like double-press `Ctrl+C`/`Ctrl+D` to exit.
 - **Shell mode** — a leading `!` on an empty prompt (Claude Code's convention) switches Enter to run the line as a local shell command instead of sending it to the agent; the prompt border turns yellow for the duration, and output streams into the transcript without touching the session log.
@@ -85,6 +87,8 @@ Any row `--dump-config` prints — the model adapter, tool set, sandbox policy, 
 | `/goal [objective]` | set a long-running goal (or, with no argument, show the current goal) |
 | `/goal clear` / `/goal edit <objective>` / `/goal pause` / `/goal resume` | clear, reword, pause, or resume the current goal |
 | `/compact` | summarize and compact session history |
+| `/rename [title]` | set an explicit session title; with no argument, generates one from the conversation so far |
+| `/resume [sessionId]` | switch to a persisted session by id; with no argument, opens a picker of this directory's past sessions |
 | `/clear` | flush the current session and start a new one |
 | `/exit`, `/quit` | cancel, wait for idle, flush the session, exit |
 
@@ -101,6 +105,7 @@ Any row `--dump-config` prints — the model adapter, tool set, sandbox policy, 
 | `@` | open the file-mention dropdown; `↑`/`↓` to move, `Tab`/`Enter` to insert the path, `Esc` to dismiss |
 | `←`/`→` (empty prompt) | with the docked subagent switcher showing, move to the previous/next session (main, then each subagent child) |
 | `Esc` (viewing a subagent, empty prompt) | return to the main transcript |
+| `/resume` (bare) | open the session picker; `↑`/`↓` select, `Enter` resumes the selected session, `Esc`/`q` closes without resuming |
 | `Tab` | in `/command` mode, autocomplete the highlighted command |
 | `↑` / `↓`, `Ctrl+P` / `Ctrl+N` | recall prompt history, or move within a multi-line draft |
 | `Shift+Enter`, `Alt+Enter`, trailing `\` + `Enter` | insert a newline instead of submitting |

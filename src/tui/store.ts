@@ -52,6 +52,15 @@ export interface AgentPresetsOverlayState {
   readonly error: string | undefined
 }
 
+/** Overlay-owned state for the `/resume` session picker. */
+export interface ResumeOverlayState {
+  /** Joined past-session listing for the current cwd, newest first; empty while the first load is still in flight (see `busy`). */
+  readonly rows: readonly SessionResumeRow[]
+  readonly selected: number
+  readonly busy: boolean
+  readonly error: string | undefined
+}
+
 /**
  * One subagent child's own read-only transcript, opened from the docked
  * agents-strip switcher (see `buildAgentsStripText`/`cycleAgentsStrip`),
