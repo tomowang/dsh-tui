@@ -1,6 +1,6 @@
 {
   "name": "@tomowang/dsh-tui",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Terminal front door for DeepSeek Harness (dsh): an out-of-tree TUI mode bundle over dsh-base",
   "type": "module",
   "license": "MIT",
