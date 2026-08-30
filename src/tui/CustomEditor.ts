@@ -21,10 +21,11 @@
 import type { AgentStatus } from '@deepseek-ai/dsh-agent'
 import { Editor, Key, matchesKey, type TUI } from '@earendil-works/pi-tui'
 import type { TuiActions } from './actions.js'
-import { matchSlashCommands, parseGoalCommand, parsePlanCommand, runSlashCommand } from './commands.js'
+import { matchSlashCommands, parseGoalCommand, parsePlanCommand, parseRenameCommand, parseResumeCommand, runSlashCommand } from './commands.js'
 import { editorTheme, shellModeEditorBorderColor } from './piTheme.js'
 import { PromptAutocompleteProvider, type GetFileCandidates } from './promptAutocomplete.js'
 import { theme, fg } from './theme.js'
+import { buildTitledBorder, isPlainBorder } from './titledBorder.js'
 
 const EXIT_ARM_TIMEOUT_MS = 2000
 const armedHint = fg(theme.muted)
@@ -35,6 +36,8 @@ export interface CustomEditorDeps {
   /** Submitted-line history for up/down-arrow recall; owned outside the component tree so it survives `/clear`. */
   readonly history: string[]
   readonly getFileCandidates: GetFileCandidates
+  /** Current session title (the 'title' projection: `null` before one lands, `undefined` without `dsh-session-title` composed), for the box's top-border label. */
+  readonly getTitle: () => string | null | undefined
 }
 
 export class CustomEditor extends Editor {
@@ -128,6 +131,18 @@ export class CustomEditor extends Editor {
       this.actions.goal(goalCommand)
       return
     }
+    // `/rename` and `/resume` both take a free-text argument (a title, a
+    // session id), so they share `/plan`'s parse-ahead shape too.
+    const renameTitle = parseRenameCommand(trimmed)
+    if (renameTitle !== undefined) {
+      this.actions.rename(renameTitle)
+      return
+    }
+    const resumeSessionId = parseResumeCommand(trimmed)
+    if (resumeSessionId !== undefined) {
+      this.actions.resume(resumeSessionId)
+      return
+    }
     const matches = trimmed.startsWith('/') && !/\s/.test(trimmed) ? matchSlashCommands(trimmed) : []
     if (matches.length > 0) {
       runSlashCommand(matches[0].command, this.actions)
@@ -197,7 +212,7 @@ export class CustomEditor extends Editor {
     const hints: string[] = []
     if (this.armedKey !== undefined) hints.push(armedHint(`Press Ctrl+${this.armedKey.toUpperCase()} again to exit`))
     if (this.shellMode) hints.push(shellModeHint('! shell mode — Enter runs the command, Esc/Backspace exits'))
-    return [...hints, ...this.withPromptPrefix(super.render(width), width)]
+    return [...hints, ...this.withPromptPrefix(this.withSessionTitle(super.render(width), width), width)]
   }
 
   /**
@@ -214,6 +229,28 @@ export class CustomEditor extends Editor {
     const prefix = this.borderColor(this.shellMode ? '! ' : '› ')
     const next = [...lines]
     next[1] = prefix + next[1].slice(2)
+    return next
+  }
+
+  /**
+   * Right-aligns the session title into the box's top border (index 0),
+   * Claude Code CLI-style — e.g. `───────────────── explore-dir`. Only
+   * replaces the *plain* unscrolled border (a bare run of `─`, matched by
+   * stripping SGR before comparing): Editor's own scroll-up indicator
+   * (`createScrollBorder` in pi-tui, e.g. `─── ↑ 3 more ─────`) is multi-line
+   * input's only affordance for "there's more above", so it must win over
+   * the title whenever both would want the same row. No title (not yet
+   * accepted, or `dsh-session-title` not composed) or a title too long for
+   * the box at its current width both leave the border untouched.
+   */
+  private withSessionTitle(lines: string[], width: number): string[] {
+    const title = this.deps.getTitle()
+    if (title === null || title === undefined || lines.length === 0) return lines
+    if (!isPlainBorder(lines[0], width)) return lines
+    const border = buildTitledBorder(width, title, this.borderColor)
+    if (border === undefined) return lines
+    const next = [...lines]
+    next[0] = border
     return next
   }
 }

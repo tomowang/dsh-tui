@@ -26,7 +26,7 @@ import { resolveSessionPreset } from '@deepseek-ai/dsh-agent-presets'
 import type { AgentPreset } from '@deepseek-ai/dsh-agent-presets'
 import { ManualCompactionError } from '@deepseek-ai/dsh-compaction'
 import type { ManualCompactionErrorCode } from '@deepseek-ai/dsh-compaction'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { BlockAssembler, createUserMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { GoalError } from '@deepseek-ai/dsh-goal'
 import type { GoalProjection, GoalRef, GoalView } from '@deepseek-ai/dsh-goal'
 import { foldPlanMode } from '@deepseek-ai/dsh-plan-mode'
@@ -52,12 +52,18 @@ import type {} from '@deepseek-ai/dsh-sandbox-policy'
 // SessionProjectionMap entries for the status bar's stats line.
 import type { SessionProjectionMap } from '@deepseek-ai/dsh-session-projection'
 import type {} from '@deepseek-ai/dsh-session-stats'
-// Type-only: resolves the 'title' SessionProjectionMap entry the terminal
-// title (`TuiApp`'s `updateTerminalTitle`) reads.
-import type {} from '@deepseek-ai/dsh-session-title'
+// Resolves the 'title' SessionProjectionMap entry the terminal title
+// (`TuiApp`'s `updateTerminalTitle`) reads, and `/rename`'s empty-title
+// rejection.
+import { foldSessionTitle, SessionTitleInvalidError } from '@deepseek-ai/dsh-session-title'
+// Type-only: resolves ctx.sessionPersistence for the /resume picker's
+// cwd-scoped past-session listing.
+import type {} from '@deepseek-ai/dsh-session-persistence'
 import type {} from '@deepseek-ai/dsh-token-meter'
 
 import { ensureSessionIdPrefix, stripSessionIdPrefix } from './sessionId.js'
+import { textOf } from './render.js'
+import { collectRenameSourceTexts, TITLE_GENERATION_SYSTEM_PROMPT, toKebabCase } from './tui/titleGeneration.js'
 import { SLASH_COMMANDS, SLASH_COMMAND_WIDTH } from './tui/commands.js'
 import { goalPhaseLabel } from './tui/liveText.js'
 import { TuiStore } from './tui/store.js'
@@ -70,6 +76,8 @@ import { checkForUpdate } from './updateCheck.js'
 import type { ProviderDraft, ProviderRow, StoredProviderProfile } from './tui/modelProfile/types.js'
 import type { PluginRow } from './tui/plugins/types.js'
 import type { AgentPresetRow } from './tui/agentPresets/types.js'
+import type { SessionResumeRow } from './tui/resume/types.js'
+import { selectResumeCandidates } from './tui/resume/select.js'
 import type { QuestionAnswer, QuestionOptionRow } from './tui/interaction/types.js'
 
 /** Stable Cordis plugin name. */
@@ -293,10 +301,19 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
   // reader /goal is unavailable and hides the goal strip instead of refusing
   // to start.
   const goals = ctx.get('goals')
+  // Same optional-service pattern: a profile without the session-title
+  // service just tells the reader /rename is unavailable instead of
+  // refusing to start.
+  const sessionTitle = ctx.get('sessionTitle')
   // Same optional-service pattern: a profile without a mounted agent-preset
   // roster just shows no preset in the status bar and tells the reader
   // /presets is unavailable instead of refusing to start.
   const presets = ctx.get('agentPresets')
+  // Same optional-service pattern: a profile without durable session
+  // persistence just tells the reader /resume's picker is unavailable
+  // instead of refusing to start (`/resume <id>` itself still works — it
+  // goes through `agents.resume`, not this seam).
+  const sessionPersistence = ctx.get('sessionPersistence')
   // Same optional-service pattern: a profile without a mounted settings
   // service just keeps prompt history in memory for the process's lifetime
   // instead of refusing to start. Registration can also fail loud on an
@@ -473,6 +490,35 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
     }
   }
 
+  /**
+   * Fetch this cwd's past sessions (headers only — cheap, no full-log parse)
+   * and refresh the open `/resume` overlay's row list. A header alone has no
+   * title (that's folded from `session/title` events, not stored metadata),
+   * so each candidate gets one `inspect` — a full log read — to fold its
+   * title; a failed or title-less inspect just leaves that row's title
+   * `undefined` ("untitled") rather than dropping the row or the listing.
+   */
+  async function loadResumeSessions(): Promise<void> {
+    if (sessionPersistence === undefined) return
+    try {
+      const headers = await sessionPersistence.list()
+      const candidates = selectResumeCandidates(headers, process.cwd(), current.agent.session.id)
+      const rows = await Promise.all(candidates.map(async (header): Promise<SessionResumeRow> => {
+        let title: string | undefined
+        try {
+          const inspected = await sessionPersistence.inspect(header.id)
+          title = foldSessionTitle(inspected.events)?.title
+        } catch {
+          title = undefined
+        }
+        return { id: stripSessionIdPrefix(String(header.id)), title, createdAt: header.createdAt }
+      }))
+      current.store.updateResume({ rows, busy: false, error: undefined })
+    } catch (error) {
+      current.store.updateResume({ busy: false, error: error instanceof Error ? error.message : String(error) })
+    }
+  }
+
   /** Load the `@`-mention dropdown's backing file list, guarded against a redundant reload once one is already loaded/in flight. */
   async function ensureFileIndexLoaded(): Promise<void> {
     const snapshot = current.store.getSnapshot().fileIndex
@@ -566,7 +612,7 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
     }
   }
 
-  /** One live agent/session/UI wiring; replaced wholesale by `clearSession()`. */
+  /** One live agent/session/UI wiring; replaced wholesale by `clearSession()`/`resumeSession()`. */
   interface CurrentSession {
     readonly agent: Agent
     readonly store: TuiStore
@@ -751,6 +797,52 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
   // process restarts, not just `/clear`.
   const promptHistory: string[] = historyScope !== undefined ? [...historyScope.get().entries] : []
 
+  /**
+   * On-demand title generation for bare `/rename`: one auxiliary `ctx.llm`
+   * call over every human message logged so far. Deliberately not
+   * registered as an automatic `ctx.sessionTitle` provider (unlike
+   * `dsh-session-title-first-prompt-llm`/`-all-prompts-llm`) — this only
+   * ever runs when the reader explicitly asks for it, so no per-message
+   * cost lands on sessions that never touch `/rename`.
+   * @param session - exact live session to summarize.
+   * @param route - provider/model to run the auxiliary call on (this
+   *   session's own route, not necessarily the deployment default).
+   * @returns the generated title, or `undefined` when there's no eligible
+   *   message yet, `ctx.llm` isn't composed, or the model produced no
+   *   usable text.
+   */
+  async function generateSessionTitle(session: Session, route: { provider: string; model: string }): Promise<string | undefined> {
+    const llm = ctx.get('llm')
+    if (llm === undefined) return undefined
+    const texts = collectRenameSourceTexts(session.events)
+    if (texts.length === 0) return undefined
+    const assembler = new BlockAssembler()
+    for await (const chunk of llm.stream({
+      provider: route.provider,
+      model: route.model,
+      messages: [createUserMessage({
+        content: [{ type: 'text', text: JSON.stringify(texts) }],
+        source: { kind: 'plugin', plugin: 'dsh-tui' },
+      })],
+      system: TITLE_GENERATION_SYSTEM_PROMPT,
+      maxTokens: 64,
+      sessionId: session.id,
+      purpose: 'session-title',
+      // A reasoning model given a small maxTokens can spend the entire
+      // budget thinking and never reach visible text (verified live against
+      // this deployment's own model, which does exactly that at even 1024
+      // tokens). 'off' is a request the exact model may not support — a
+      // model without it configured throws UNSUPPORTED_REASONING_EFFORT
+      // here, before any network call, caught by this function's own
+      // caller same as every other failure.
+      reasoningEffort: ReasoningEffortId('off'),
+    })) {
+      assembler.push(chunk)
+    }
+    const slug = toKebabCase(textOf(assembler.blocks()))
+    return slug === '' ? undefined : slug
+  }
+
   /** Create (or resume) one Agent, wire its listeners to a fresh store, and mount a fresh Ink tree. */
   async function attachSession(resumeId: string | undefined): Promise<CurrentSession> {
     const selection = defaultModel.currentSelection()
@@ -922,6 +1014,37 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
       clear() {
         void clearSession()
       },
+      resume(sessionId) {
+        const trimmedId = sessionId.trim()
+        if (trimmedId === '') {
+          if (sessionPersistence === undefined) {
+            store.setNotice('the session picker is not available in this profile; use /resume <sessionId>')
+            return
+          }
+          store.openResume()
+          void loadResumeSessions()
+          return
+        }
+        void resumeSession(trimmedId)
+      },
+      openResume() {
+        if (sessionPersistence === undefined) {
+          store.setNotice('the session picker is not available in this profile; use /resume <sessionId>')
+          return
+        }
+        store.openResume()
+        void loadResumeSessions()
+      },
+      closeResume() {
+        store.closeOverlay()
+      },
+      selectResumeRow(index) {
+        store.selectResumeRow(index)
+      },
+      applyResume(id) {
+        store.closeOverlay()
+        void resumeSession(id)
+      },
       cyclePermission() {
         if (permissionPresets === undefined) {
           store.setNotice('permission presets are not available in this profile')
@@ -955,6 +1078,47 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
             store.setNotice(`compaction failed: ${message}`)
           })
           .finally(() => { compacting = false })
+      },
+      rename(title) {
+        if (sessionTitle === undefined) {
+          store.setNotice('rename is not available in this profile')
+          return
+        }
+        const commit = (accepted: string): void => {
+          try {
+            const snapshot = sessionTitle.rename(agent.session, accepted)
+            // No manual store.setTitle here: the sessionProjections 'title'
+            // listener wired in attachSession picks up the session/title
+            // event this just appended and updates the store reactively.
+            store.setNotice(`Renamed to "${snapshot.title}".`)
+          } catch (error) {
+            const message = error instanceof SessionTitleInvalidError
+              ? 'title must contain visible characters'
+              : error instanceof Error ? error.message : String(error)
+            store.setNotice(`rename failed: ${message}`)
+          }
+        }
+        const trimmedTitle = title.trim()
+        if (trimmedTitle !== '') {
+          commit(trimmedTitle)
+          return
+        }
+        // Bare /rename: generate one instead of requiring the reader to
+        // type it, Claude Code-style. On-demand only — see
+        // generateSessionTitle's own doc for why this isn't a registered
+        // automatic provider.
+        store.setNotice('Generating a title from the conversation so far…')
+        void generateSessionTitle(agent.session, agentOptions)
+          .then(generated => {
+            if (generated === undefined) {
+              store.setNotice('rename failed: no eligible messages to summarize yet')
+              return
+            }
+            commit(generated)
+          })
+          .catch((error: unknown) => {
+            store.setNotice(`rename failed: ${error instanceof Error ? error.message : String(error)}`)
+          })
       },
       // Mirrors `@deepseek-ai/dsh-plan-mode`'s own `/plan` command handler
       // (its result text is model-facing there; reused here as the notice).
@@ -1257,10 +1421,12 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
     io.exit(0)
   }
 
-  /** Flush and drop the live session, then attach a brand-new one in a freshly cleared screen. */
-  async function clearSession(): Promise<void> {
-    if (current.closing) return
-    const old = current
+  /**
+   * Flush and tear down `old`'s agent/store/Ink tree so a new one can take
+   * over the terminal. Shared by `clearSession` and `resumeSession`, which
+   * differ only in what they attach afterward.
+   */
+  async function detachSession(old: CurrentSession): Promise<void> {
     old.closing = true
     old.agent.cancel({ kind: 'user' })
     await old.agent.whenIdle()
@@ -1272,7 +1438,39 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
     // flattening its content into scrollback (that's for a real exit, below).
     old.instance.unmount({ preserveScreen: true })
     await old.instance.waitUntilExit()
+  }
+
+  /** Flush and drop the live session, then attach a brand-new one in a freshly cleared screen. */
+  async function clearSession(): Promise<void> {
+    if (current.closing) return
+    await detachSession(current)
     current = await attachSession(undefined)
+  }
+
+  /**
+   * Flush and drop the live session, then attach a persisted session by id
+   * in a freshly cleared screen — the interactive counterpart to
+   * `dsh --profile tui --resume <sessionId>`.
+   *
+   * Unlike `clearSession`, attaching can fail (an unknown or malformed id):
+   * `attachSession` also mounts the Ink tree, and pi-tui's alternate-screen
+   * model doesn't support two live instances at once, so the old session
+   * must already be torn down before attempting the new one — there's no
+   * cheap way to validate the id first without attaching. A failure here
+   * therefore falls back to a brand-new session (matching `clearSession`'s
+   * behavior) with a notice explaining why, rather than leaving the TUI
+   * without any live session at all.
+   */
+  async function resumeSession(sessionId: string): Promise<void> {
+    if (current.closing) return
+    await detachSession(current)
+    try {
+      current = await attachSession(sessionId)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      current = await attachSession(undefined)
+      current.store.setNotice(`resume failed: ${message}; started a new session instead`)
+    }
   }
 
   // The TUI instance is the effect: plugin disposal must always release stdin.

@@ -61,6 +61,7 @@ import { ToolCardsOverlay } from './toolCards/ToolCardsOverlay.js'
 import { ContextOverlay } from './context/ContextOverlay.js'
 import { PluginsOverlay } from './plugins/PluginsOverlay.js'
 import { AgentPresetsOverlay } from './agentPresets/AgentPresetsOverlay.js'
+import { ResumeOverlay } from './resume/ResumeOverlay.js'
 import { ApprovalOverlay } from './interaction/ApprovalOverlay.js'
 import { QuestionOverlay } from './interaction/QuestionOverlay.js'
 
@@ -242,6 +243,7 @@ class TuiApp implements TuiHandle {
       getStatus: () => store.getSnapshot().status,
       history: options.promptHistory,
       getFileCandidates: () => this.waitForFileIndex(),
+      getTitle: () => store.getSnapshot().title,
     })
 
     const noticeText = new DynamicText(() => {
@@ -401,6 +403,8 @@ class TuiApp implements TuiHandle {
         return new PluginsOverlay(this.tui, overlay.rows, actions)
       case 'agentPresets':
         return new AgentPresetsOverlay(store, actions)
+      case 'resume':
+        return new ResumeOverlay(store, actions)
       case 'approval':
         // Rendered inline via `approvalSlot` in `updateOverlay` instead —
         // never reaches a full-screen `showOverlay` panel.

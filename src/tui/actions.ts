@@ -34,6 +34,10 @@ export interface TuiActions {
   plan(rawInput: string): void
   /** Run one parsed `/goal` command (show/create/edit/pause/resume/clear) via `ctx.goals`. */
   goal(command: GoalCommand): void
+  /** Rename the session's title via `ctx.sessionTitle`, pinning it against automatic regeneration. Empty/whitespace-only text shows a usage notice instead. */
+  rename(title: string): void
+  /** `/resume <id>` flushes the current session and attaches the persisted one in a fresh screen (a resume failure falls back to a brand-new session with a notice); bare `/resume` opens the session picker instead. */
+  resume(sessionId: string): void
   /** Start (or no-op if already loaded/loading) the background load backing the `@`-mention dropdown. */
   ensureFileIndex(): void
 
@@ -86,6 +90,15 @@ export interface TuiActions {
   selectAgentPresetRow(index: number): void
   /** Apply a different agent preset to the current (blank) session. */
   applyAgentPreset(id: string): void
+
+  /** Open the `/resume` session picker and start loading this cwd's past sessions. */
+  openResume(): void
+  /** Close the `/resume` picker without resuming anything. */
+  closeResume(): void
+  /** Move the `/resume` picker's list cursor. */
+  selectResumeRow(index: number): void
+  /** Resume the picker's selected session — same effect as `resume(id)`, closing the picker first. */
+  applyResume(id: string): void
 
   /** Answer the pending in-terminal tool-approval prompt. */
   answerApproval(outcome: 'allowed-once' | 'rejected'): void

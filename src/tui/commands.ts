@@ -23,6 +23,8 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
   { command: '/goal', description: 'Set or view the long-running goal: /goal <objective> | clear | edit <objective> | pause | resume' },
   { command: '/plan', description: 'Enter plan mode, optionally with a message; /plan off to leave' },
   { command: '/compact', description: 'Summarize and compact session history' },
+  { command: '/rename', description: 'Rename the session: /rename <title>' },
+  { command: '/resume', description: 'Switch to a persisted session by id: /resume <sessionId>' },
   { command: '/clear', description: 'Clear the screen and start a new session' },
   { command: '/exit', description: 'Exit dsh-tui' },
   { command: '/quit', description: 'Exit dsh-tui' },
@@ -91,6 +93,39 @@ export function parseGoalCommand(text: string): GoalCommand | undefined {
   if (control === 'edit') return { kind: 'invalid-edit' }
   if (/^edit(?=\s)/iu.test(input)) return { kind: 'edit', objective: input.slice(4).trim() }
   return { kind: 'create', objective: input }
+}
+
+/** `/rename` on its own, or followed by whitespace — its title is free text, so it shares `/plan`'s parse-ahead shape. */
+const RENAME_COMMAND = /^\/rename(?:$|\s)/u
+
+/**
+ * `/rename`'s argument is the new title as free text, so like `/plan` and
+ * `/goal` it can't route through {@link matchSlashCommands}'s
+ * whitespace-free matching.
+ * @param text - Raw submitted line.
+ * @returns The trimmed title argument (possibly empty, for the caller to reject as a usage error), or `undefined` when `text` isn't a `/rename` invocation.
+ */
+export function parseRenameCommand(text: string): string | undefined {
+  const trimmed = text.trim()
+  if (!RENAME_COMMAND.test(trimmed)) return undefined
+  return trimmed.slice('/rename'.length).trim()
+}
+
+/** `/resume` on its own, or followed by whitespace — distinct from `/goal resume`, which resumes a paused goal rather than switching sessions. */
+const RESUME_COMMAND = /^\/resume(?:$|\s)/u
+
+/**
+ * `/resume`'s argument is a persisted session id, so like `/rename` it takes
+ * free text rather than routing through the whitespace-free matcher. IDs
+ * don't contain whitespace in practice, but the raw remainder is returned
+ * unsplit so the caller decides how to report a malformed one.
+ * @param text - Raw submitted line.
+ * @returns The trimmed session id argument (possibly empty, for the caller to reject as a usage error), or `undefined` when `text` isn't a `/resume` invocation.
+ */
+export function parseResumeCommand(text: string): string | undefined {
+  const trimmed = text.trim()
+  if (!RESUME_COMMAND.test(trimmed)) return undefined
+  return trimmed.slice('/resume'.length).trim()
 }
 
 export function runSlashCommand(command: string, actions: TuiActions): void {
