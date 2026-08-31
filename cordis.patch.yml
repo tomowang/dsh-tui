@@ -44,3 +44,14 @@
       name: '@deepseek-ai/dsh-agent-presets'
       config:
         default: standard
+
+    # Host-owned opt-in the shipped presets' `tool-subagent` rows require:
+    # the standard/code/minimal/cordis presets all set `modelSelectionSettings:
+    # true` on their delegation tool, which throws at preset-mount time
+    # ("requires @deepseek-ai/dsh-tool-subagent/model-selection-settings in
+    # the Host scope") without this row composed somewhere above them.
+    # dsh-base's own host-plane `tool-subagent` doesn't request the flag, so
+    # dsh-base never needed this; mirrors dsh-web-app's bundle, which mounts
+    # the same row for the same reason.
+    - id: subagent-model-selection-settings
+      name: '@deepseek-ai/dsh-tool-subagent/model-selection-settings'
