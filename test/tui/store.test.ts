@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { CallId } from '@deepseek-ai/dsh-llm'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { TuiStore } from '../../src/tui/store.js'
 
@@ -134,18 +134,18 @@ describe('TuiStore streaming', () => {
 describe('TuiStore.getToolCall', () => {
   it('resolves a call seeded from replay', () => {
     const store = new TuiStore({ events: [toolCallEvent(1, 'call-1', 'read_file', '{"path":"/tmp/foo.txt"}')] })
-    expect(store.getToolCall(CallId('call-1'))).toEqual({ name: 'read_file', arguments: '{"path":"/tmp/foo.txt"}' })
+    expect(store.getToolCall(ToolCallId('call-1'))).toEqual({ name: 'read_file', arguments: '{"path":"/tmp/foo.txt"}' })
   })
 
   it('resolves a call appended live', () => {
     const store = new TuiStore({ events: [] })
     store.appendEvent(toolCallEvent(1, 'call-1', 'bash', '{"command":"ls"}'))
-    expect(store.getToolCall(CallId('call-1'))).toEqual({ name: 'bash', arguments: '{"command":"ls"}' })
+    expect(store.getToolCall(ToolCallId('call-1'))).toEqual({ name: 'bash', arguments: '{"command":"ls"}' })
   })
 
   it('returns undefined for an unknown callId', () => {
     const store = new TuiStore({ events: [] })
-    expect(store.getToolCall(CallId('missing'))).toBeUndefined()
+    expect(store.getToolCall(ToolCallId('missing'))).toBeUndefined()
   })
 })
 

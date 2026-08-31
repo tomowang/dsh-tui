@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CallId } from '@deepseek-ai/dsh-llm'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { buildAgentDetailLines, buildToolCallLookup } from '../../../src/tui/agents/detailLines.js'
 
@@ -17,13 +17,13 @@ function userMessage(text: string): SessionEvent {
 }
 
 function toolCallEvent(callId: string, name: string, args: string): SessionEvent {
-  return event('tool/call', { callId: CallId(callId), name, arguments: args })
+  return event('tool/call', { callId: ToolCallId(callId), name, arguments: args })
 }
 
 describe('buildToolCallLookup', () => {
   it("maps a tool/call event's callId to its name and arguments", () => {
     const lookup = buildToolCallLookup([toolCallEvent('c1', 'read_file', '{"path":"a.ts"}')])
-    expect(lookup.get(CallId('c1'))).toEqual({ name: 'read_file', arguments: '{"path":"a.ts"}' })
+    expect(lookup.get(ToolCallId('c1'))).toEqual({ name: 'read_file', arguments: '{"path":"a.ts"}' })
   })
 
   it('ignores non tool/call events', () => {
@@ -32,7 +32,7 @@ describe('buildToolCallLookup', () => {
 
   it('has no entry for a callId absent from the given log', () => {
     const lookup = buildToolCallLookup([toolCallEvent('c1', 'read_file', '{}')])
-    expect(lookup.get(CallId('c2'))).toBeUndefined()
+    expect(lookup.get(ToolCallId('c2'))).toBeUndefined()
   })
 
   it('returns an empty map for an empty log', () => {

@@ -10,7 +10,7 @@
 import type { AgentStatus } from '@deepseek-ai/dsh-agent'
 import type { GoalProjection } from '@deepseek-ai/dsh-goal'
 import { BlockAssembler } from '@deepseek-ai/dsh-llm'
-import type { CallId, StreamChunk } from '@deepseek-ai/dsh-llm'
+import type { ToolCallId, StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent, UserMessage } from '@deepseek-ai/dsh-session'
 import type { SessionStatsProjection } from '@deepseek-ai/dsh-session-stats'
 import type { ContextBreakdownProjection, ContextPressureProjection, TokenUsageProjection } from '@deepseek-ai/dsh-token-meter'
@@ -154,7 +154,7 @@ export interface StreamingState {
 
 /** One tool call sent but with no `tool/result` yet, for the live region's spinner row; collapses into the transcript's one-line summary once its result lands. */
 export interface PendingToolCall {
-  readonly callId: CallId
+  readonly callId: ToolCallId
   readonly name: string
   readonly arguments: string
 }
@@ -242,11 +242,11 @@ export class TuiStore {
   // Not part of TuiState either: a `tool/result` event carries no name/arguments
   // of its own (only `message.source.callId`), so a later `presentResult` needs
   // this O(1) lookup back to its `tool/call` rather than an O(n) history scan.
-  private readonly toolCalls = new Map<CallId, { name: string; arguments: string }>()
+  private readonly toolCalls = new Map<ToolCallId, { name: string; arguments: string }>()
   // Backing map for `pendingToolCalls`: insertion-ordered so its `.values()`
   // snapshot lists calls in the order they were sent, same as `toolCalls`
   // above but pruned as each call's result lands.
-  private readonly pendingToolCallsMap = new Map<CallId, { name: string; arguments: string }>()
+  private readonly pendingToolCallsMap = new Map<ToolCallId, { name: string; arguments: string }>()
 
   constructor(initial: { events: readonly SessionEvent[] }) {
     const lastSeq = initial.events.at(-1)?.seq ?? 0
@@ -290,7 +290,7 @@ export class TuiStore {
   getSnapshot = (): TuiState => this.state
 
   /** The `tool/call` a later `tool/result` correlates with, by `callId`; `undefined` when its call was never seen (e.g. log truncation). */
-  getToolCall = (callId: CallId): { name: string; arguments: string } | undefined => this.toolCalls.get(callId)
+  getToolCall = (callId: ToolCallId): { name: string; arguments: string } | undefined => this.toolCalls.get(callId)
 
   subscribe = (listener: Listener): (() => void) => {
     this.listeners.add(listener)

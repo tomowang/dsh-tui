@@ -8,13 +8,13 @@
  * @module @tomowang/dsh-tui/tui/agents/detailLines
  */
 
-import type { CallId } from '@deepseek-ai/dsh-llm'
+import type { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { formatEvent, type RenderOptions } from '../../render.js'
 
 /** One event log's `tool/call` events, keyed by `callId` — everything a later `tool/result` in the same log needs to present with (see `RenderOptions.getToolCall`). */
-export function buildToolCallLookup(events: readonly SessionEvent[]): ReadonlyMap<CallId, { name: string; arguments: string }> {
-  const toolCalls = new Map<CallId, { name: string; arguments: string }>()
+export function buildToolCallLookup(events: readonly SessionEvent[]): ReadonlyMap<ToolCallId, { name: string; arguments: string }> {
+  const toolCalls = new Map<ToolCallId, { name: string; arguments: string }>()
   for (const event of events) {
     if (event.type === 'tool/call') toolCalls.set(event.data.callId, { name: event.data.name, arguments: event.data.arguments })
   }

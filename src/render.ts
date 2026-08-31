@@ -6,7 +6,7 @@
  */
 
 import { diffLines } from 'diff'
-import type { CallId, ContentBlock } from '@deepseek-ai/dsh-llm'
+import type { ToolCallId, ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { FileDiff, ToolCallView, ToolDefinition, ToolResult, ToolResultView } from '@deepseek-ai/dsh-tools'
 import { renderMarkdown } from './markdown.js'
@@ -19,7 +19,7 @@ export interface RenderOptions {
   /** Look up a tool's declared presentation by name; absent outside the live TUI (e.g. tests). */
   getTool?: (name: string) => ToolDefinition | undefined
   /** Look up a `tool/call`'s name/arguments by `callId`, for a later `tool/result` to present with. */
-  getToolCall?: (callId: CallId) => { name: string; arguments: string } | undefined
+  getToolCall?: (callId: ToolCallId) => { name: string; arguments: string } | undefined
 }
 
 const dim = fg(theme.muted)
@@ -246,7 +246,7 @@ export function formatPendingToolCalls(
 
 /** Resolve a `tool/result`'s presented view, or `undefined` for any condition that keeps the flat fallback. */
 function presentResultSafely(
-  callId: CallId,
+  callId: ToolCallId,
   result: ToolResult,
   options: RenderOptions,
 ): { name: string; view: ToolResultView } | undefined {
@@ -265,7 +265,7 @@ function presentResultSafely(
 }
 
 /** A `tool/result`'s paired `tool/call`'s presented one-line identity, when both the call and a presenter for it resolve — the "pending-state title" a result view's own optional `title` defers to when omitted (see `ToolResultView` docs in `@deepseek-ai/dsh-tools`). */
-function resolveCallTitle(callId: CallId, options: RenderOptions): string | undefined {
+function resolveCallTitle(callId: ToolCallId, options: RenderOptions): string | undefined {
   const call = options.getToolCall?.(callId)
   if (call === undefined) return undefined
   const view = presentCallSafely(call.name, call.arguments, options.getTool)

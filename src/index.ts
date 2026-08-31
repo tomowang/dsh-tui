@@ -20,20 +20,19 @@ import z from '@deepseek-ai/schemastery'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
 import type { Agent, ModelSelectionRef } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
-// Real import so its `agent-preset/selected` SessionEventMap augmentation
-// (declared in the module's own session.ts) resolves alongside the value.
-import { resolveSessionPreset } from '@deepseek-ai/dsh-agent-presets'
+// Type-only: carries the `agent-preset/selected` SessionEventMap augmentation
+// (declared in the module's own session.ts) alongside AgentPreset.
+import type {} from '@deepseek-ai/dsh-agent-presets'
 import type { AgentPreset } from '@deepseek-ai/dsh-agent-presets'
 import { ManualCompactionError } from '@deepseek-ai/dsh-compaction'
 import type { ManualCompactionErrorCode } from '@deepseek-ai/dsh-compaction'
 import { BlockAssembler, createUserMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { GoalError } from '@deepseek-ai/dsh-goal'
 import type { GoalProjection, GoalRef, GoalView } from '@deepseek-ai/dsh-goal'
-import { foldPlanMode } from '@deepseek-ai/dsh-plan-mode'
+import type {} from '@deepseek-ai/dsh-plan-mode'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
+import type { Session } from '@deepseek-ai/dsh-session'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type { SettingsPathOp, SettingsScope } from '@deepseek-ai/dsh-settings'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type { ApprovalOutcome, ApprovalRequest } from '@deepseek-ai/dsh-user-approval'
@@ -345,7 +344,7 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
   let historyScope: SettingsScope<HistorySettings> | undefined
   if (settingsForHistory !== undefined) {
     try {
-      historyScope = settingsForHistory.register(settingsNamespace(HISTORY_NAMESPACE), HistorySettings)
+      historyScope = settingsForHistory.register(HISTORY_NAMESPACE, HistorySettings)
     } catch {
       historyScope = undefined
     }
@@ -383,9 +382,9 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
   }
 
   /** The session's current permission preset, or `undefined` without a mounted service. */
-  function permissionState(events: readonly SessionEvent[]): PermissionState | undefined {
+  function permissionState(session: Session): PermissionState | undefined {
     if (permissionPresets === undefined) return undefined
-    return { current: permissionPresets.current(events), names: permissionPresets.names }
+    return { current: permissionPresets.current(session), names: permissionPresets.names }
   }
 
   /**
@@ -419,11 +418,11 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
     return values?.title
   }
 
-  /** The session's current agent preset, or `undefined` without a mounted service. */
-  function currentPresetState(session: Session): PresetState | undefined {
+  /** The current agent's current agent preset, or `undefined` without a mounted service. */
+  function currentPresetState(agent: Agent): PresetState | undefined {
     if (presets === undefined) return undefined
-    const id = resolveSessionPreset(session)
-    return { current: id === undefined ? undefined : presetLabelForId(id), blank: sessionBlank(session) }
+    const id = presets.composedPreset(agent.ctx)
+    return { current: id === undefined ? undefined : presetLabelForId(id), blank: sessionBlank(agent.session) }
   }
 
   /** Snapshot the loader's current entry tree into plain display rows, or `undefined` without a mounted loader. */
@@ -633,7 +632,7 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
     current.store.updateModelProfile({ busy: true, error: undefined })
     try {
       const path = draft.isNew ? ['providers', draft.route.trim()] : [...draft.settingsPath]
-      const ns = settingsNamespace(draft.isNew ? CUSTOM_PROVIDER_NAMESPACE : draft.settingsNs)
+      const ns = draft.isNew ? CUSTOM_PROVIDER_NAMESPACE : draft.settingsNs
       const apiKeyRef = draft.apiKeyRef === '' ? deriveApiKeyRef(draft.route) : draft.apiKeyRef
       const ops: SettingsPathOp[] = [{ op: 'set', path: [...path, 'displayName'], value: draft.displayName }]
       if (draft.api === '') ops.push({ op: 'unset', path: [...path, 'api'] })
@@ -663,7 +662,7 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
     if (services === undefined) return
     current.store.updateModelProfile({ busy: true, error: undefined })
     try {
-      await services.settings.mutate(settingsNamespace(row.settingsNs), [{ op: 'unset', path: row.settingsPath }], row.revision)
+      await services.settings.mutate(row.settingsNs, [{ op: 'unset', path: row.settingsPath }], row.revision)
     } catch (error) {
       current.store.updateModelProfile({ busy: false, error: error instanceof Error ? error.message : String(error) })
       return
@@ -812,68 +811,62 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
     })
   })
 
-  // Same optional-service pattern: a profile without a mounted user-questions
-  // seam just leaves `ask_user_question`/`exit_plan_mode` calls to whatever
-  // that seam's own no-provider behavior is, instead of refusing to start.
-  const userQuestionsSvc = ctx.get('userQuestions')
-  if (userQuestionsSvc !== undefined) {
-    ctx.effect(() =>
-      userQuestionsSvc.registerProvider({
-        ask(request: AskUserQuestionRequest): Promise<AskUserQuestionAnswer> {
-          return new Promise<AskUserQuestionAnswer>((resolve, reject) => {
-            const answers: AskUserQuestionAnswerItem[] = []
-            let index = 0
-            let settled = false
-            let activeItem: PendingInteraction | undefined
+  // Bare Cordis event: fires only from inside a mounted `UserQuestionService`, so
+  // registering it costs nothing on a profile that composes none. Always
+  // claims the request (never calls `next()`) since this answerer is the
+  // interactive channel a deployment would compose it for.
+  ctx.on('user-questions/request', async (request: AskUserQuestionRequest): Promise<AskUserQuestionAnswer> => {
+    return new Promise<AskUserQuestionAnswer>((resolve, reject) => {
+      const answers: AskUserQuestionAnswerItem[] = []
+      let index = 0
+      let settled = false
+      let activeItem: PendingInteraction | undefined
 
-            const fail = (): void => {
-              if (settled) return
-              settled = true
-              request.signal?.removeEventListener('abort', fail)
-              if (activeItem !== undefined) retireInteraction(activeItem)
-              reject(new UserQuestionError('ask_user_question was interrupted before the user answered', 'ASK_ABORTED'))
-            }
-            request.signal?.addEventListener('abort', fail, { once: true })
+      const fail = (): void => {
+        if (settled) return
+        settled = true
+        request.signal?.removeEventListener('abort', fail)
+        if (activeItem !== undefined) retireInteraction(activeItem)
+        reject(new UserQuestionError('ask_user_question was interrupted before the user answered', 'ASK_ABORTED'))
+      }
+      request.signal?.addEventListener('abort', fail, { once: true })
 
-            const askNext = (): void => {
-              const question = request.questions[index]
-              if (question === undefined) {
-                settled = true
-                request.signal?.removeEventListener('abort', fail)
-                resolve({ answers })
-                return
-              }
-              const item: PendingInteraction = {
-                kind: 'question',
-                header: question.header,
-                question: question.question,
-                detail: question.detail,
-                options: (question.options ?? []).map(option => ({ label: option.label, description: option.description })),
-                multiSelect: question.multiSelect ?? false,
-                approveLabel: question.intent?.approve,
-                progress: request.questions.length > 1 ? `Question ${index + 1} of ${request.questions.length}` : undefined,
-                settle(answer) {
-                  if (settled) return
-                  activeItem = undefined
-                  retireInteraction(item)
-                  answers.push({
-                    id: question.id,
-                    selected: [...answer.selected],
-                    ...(answer.custom === undefined ? {} : { custom: answer.custom }),
-                  })
-                  index += 1
-                  askNext()
-                },
-              }
-              activeItem = item
-              enqueueInteraction(item)
-            }
+      const askNext = (): void => {
+        const question = request.questions[index]
+        if (question === undefined) {
+          settled = true
+          request.signal?.removeEventListener('abort', fail)
+          resolve({ answers })
+          return
+        }
+        const item: PendingInteraction = {
+          kind: 'question',
+          header: question.header,
+          question: question.question,
+          detail: question.detail,
+          options: (question.options ?? []).map(option => ({ label: option.label, description: option.description })),
+          multiSelect: question.multiSelect ?? false,
+          approveLabel: question.intent?.approve,
+          progress: request.questions.length > 1 ? `Question ${index + 1} of ${request.questions.length}` : undefined,
+          settle(answer) {
+            if (settled) return
+            activeItem = undefined
+            retireInteraction(item)
+            answers.push({
+              id: question.id,
+              selected: [...answer.selected],
+              ...(answer.custom === undefined ? {} : { custom: answer.custom }),
+            })
+            index += 1
             askNext()
-          })
-        },
-      }),
-    )
-  }
+          },
+        }
+        activeItem = item
+        enqueueInteraction(item)
+      }
+      askNext()
+    })
+  })
 
   // Owned here (outside the Ink tree) rather than inside PromptInput so `/clear`'s
   // remount doesn't lose the reader's up/down-arrow recall. Seeded from the
@@ -981,12 +974,12 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
     const store = new TuiStore({ events: agent.session.events })
     store.setStatus(agent.status)
     store.setQueued([...agent.inbox.nextStep, ...agent.inbox.nextTurn])
-    store.setPermission(permissionState(agent.session.events))
+    store.setPermission(permissionState(agent.session))
     const initialProjection = projectionValues(agent.session)
     store.setStats(statsSnapshot(initialProjection))
     store.setGoal(goalSnapshot(initialProjection))
     store.setTitle(titleSnapshot(initialProjection))
-    store.setPreset(currentPresetState(agent.session))
+    store.setPreset(currentPresetState(agent))
     if (presetNotice !== undefined) store.setNotice(presetNotice)
 
     /**
@@ -1018,10 +1011,10 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
         if (session !== agent.session) return
         store.appendEvent(event)
         if (event.type === 'permission/preset' || event.type === 'sandbox/mode' || event.type === 'approval/policy') {
-          store.setPermission(permissionState(agent.session.events))
+          store.setPermission(permissionState(agent.session))
         }
         if (event.type === 'agent-preset/selected') {
-          store.setPreset(currentPresetState(agent.session))
+          store.setPreset(currentPresetState(agent))
         }
         // A subagent child is created and finished via this session's own
         // tool/call+tool/result pair (spawning is a tool call) — the
@@ -1164,7 +1157,7 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
         }
         const names = permissionPresets.names
         if (names.length === 0) return
-        const index = names.indexOf(permissionPresets.current(agent.session.events))
+        const index = names.indexOf(permissionPresets.current(agent.session))
         // -1 (the `custom` state) + 1 = 0, so an unmatched current value lands on the first preset.
         permissionPresets.set(agent.session, names[(index + 1) % names.length])
       },
@@ -1252,7 +1245,7 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
               store.setNotice('Plan mode entry cancelled.')
               return
             case 'noop':
-              store.setNotice(foldPlanMode(agent.session.events)
+              store.setNotice(planMode.get(agent).active
                 ? 'Leaving plan mode (applies from the next step).'
                 : 'Plan mode is already inactive.')
               return
@@ -1454,7 +1447,7 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
           store.setNotice('agent presets are not available in this profile')
           return
         }
-        store.openAgentPresets({ current: resolveSessionPreset(agent.session), blank: sessionBlank(agent.session) })
+        store.openAgentPresets({ current: presets.composedPreset(agent.ctx), blank: sessionBlank(agent.session) })
         void loadAgentPresets()
       },
       closeAgentPresets() {
@@ -1473,7 +1466,7 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
         void presets.recompose(agent.ctx, id)
           .then(preset => {
             agent.session.append('agent-preset/selected', { agentPreset: preset.id })
-            store.setPreset(currentPresetState(agent.session))
+            store.setPreset(currentPresetState(agent))
             store.closeOverlay()
           })
           .catch((error: unknown) => {
