@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.8.1] - 2026-09-06
+
+### Bug Fixes
+
+- *(startup)* Mount subagent-model-selection-settings for shipped presets
+
+### Chores
+
+- *(deps)* Upgrade @deepseek-ai/dsh-* packages to 0.1.2-alpha.3
+- *(deps)* Upgrade @deepseek-ai/dsh-* packages to 0.1.2-rc.1
+
 ## [0.8.0] - 2026-08-30
 
 ### Bug Fixes
