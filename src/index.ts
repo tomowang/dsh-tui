@@ -166,7 +166,7 @@ function presetRowLabel(preset: AgentPreset): string {
 
 /** Whether `session` has run no turn yet — the only state a preset switch is accepted in, mirroring the harness's own `sessionBlank`. */
 function sessionBlank(session: Session): boolean {
-  return !session.events.some(event => event.type === 'turn/start')
+  return !session.snapshotEvents().some(event => event.type === 'turn/start')
 }
 
 /** Join one `ctx.subagents.listChildren()` entry into the agents-strip's plain row shape. */
@@ -541,7 +541,7 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
     const sessionId = SessionId(childId)
     const liveSession = sessions.get(sessionId)
     if (liveSession !== undefined) {
-      current.store.updateViewingChild({ events: liveSession.events, live: true, busy: false, error: undefined })
+      current.store.updateViewingChild({ events: liveSession.snapshotEvents(), live: true, busy: false, error: undefined })
       current.agentDetailUnsubscribe = ctx.on('session/event', (session, event) => {
         if (session !== liveSession) return
         current.store.appendViewingChildEvent(event)
@@ -891,7 +891,7 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
   async function generateSessionTitle(session: Session, route: { provider: string; model: string }): Promise<string | undefined> {
     const llm = ctx.get('llm')
     if (llm === undefined) return undefined
-    const texts = collectRenameSourceTexts(session.events)
+    const texts = collectRenameSourceTexts(session.snapshotEvents())
     if (texts.length === 0) return undefined
     const assembler = new BlockAssembler()
     for await (const chunk of llm.stream({
@@ -971,7 +971,7 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
     // Seed the store from persisted history, then follow the same log live; the
     // store's seq boundary keeps one rendering pass per event across replay and
     // live phases, and `--resume` starts with any pending inbox already shown.
-    const store = new TuiStore({ events: agent.session.events })
+    const store = new TuiStore({ events: agent.session.snapshotEvents() })
     store.setStatus(agent.status)
     store.setQueued([...agent.inbox.nextStep, ...agent.inbox.nextTurn])
     store.setPermission(permissionState(agent.session))
