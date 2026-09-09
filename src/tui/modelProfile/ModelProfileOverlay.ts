@@ -15,9 +15,9 @@
 import type { Component } from '@earendil-works/pi-tui'
 import { Key, matchesKey } from '@earendil-works/pi-tui'
 import type { TuiActions } from '../actions.js'
-import type { ModelProfileOverlayState, TuiStore } from '../store.js'
+import type { ModelPickerState, ModelProfileOverlayState, TuiStore } from '../store.js'
 import { emptyMiniTextField, miniTextFieldInput, renderMiniTextField, type MiniTextFieldState } from '../miniTextField.js'
-import type { ModelEntry, ProviderDraft } from './types.js'
+import { clampModelIndex, type ModelEntry, type ProviderDraft } from './types.js'
 import { theme, fg } from '../theme.js'
 
 const bold = (s: string): string => `\x1b[1m${s}\x1b[0m`
@@ -96,6 +96,7 @@ export class ModelProfileOverlay implements Component {
     const overlay = this.store.getSnapshot().overlay
     if (overlay.kind !== 'modelProfile') return []
     const mp = overlay.modelProfile
+    if (mp.view === 'picker' && mp.picker !== undefined) return this.renderPicker(mp.picker, mp)
     const draft = this.syncFormState(mp)
     if (draft !== undefined) return this.showModels ? this.renderModelListEditor(mp) : this.renderForm(draft, mp)
     return this.renderList(mp)
@@ -108,14 +109,15 @@ export class ModelProfileOverlay implements Component {
     if (busy && providers === undefined) lines.push(muted('Loading…'))
     providers?.forEach((row, index) => {
       const marker = row.configured ? '● ' : '○ '
-      const active = row.live ? ' (active)' : ''
+      const active = mp.activeModel?.provider === row.route ? ` (active: ${mp.activeModel.model})` : ''
       const noKey = row.apiKeyConfigured ? '' : ' [no api key]'
+      const notRegistered = row.live ? '' : ' [not registered]'
       const confirm = this.confirmDelete === index ? ' — press d again to delete' : ''
-      const text = `${index === selected ? '› ' : '  '}${marker}${row.displayName}${active}${noKey}${confirm}`
+      const text = `${index === selected ? '› ' : '  '}${marker}${row.displayName}${active}${noKey}${notRegistered}${confirm}`
       lines.push(index === selected ? invert(text) : text)
     })
     if (providers?.length === 0) lines.push(muted('No providers configured yet — press a to add one.'))
-    lines.push(muted('↑↓ select · enter edit · a add · d delete · s set active model · esc close'))
+    lines.push(muted('↑↓ select · s set active model · enter edit · a add · d delete · esc close'))
     return lines
   }
 
@@ -148,9 +150,7 @@ export class ModelProfileOverlay implements Component {
       return
     }
     if (data === 's') {
-      const row = providers[selected]
-      const model = row.models[0]
-      if (model !== undefined) this.actions.setActiveModel(row.route, model.id)
+      this.actions.openModelPicker(providers[selected].route)
       return
     }
     if (data === 'd') {
@@ -163,6 +163,49 @@ export class ModelProfileOverlay implements Component {
       return
     }
     this.confirmDelete = undefined
+  }
+
+  /**
+   * The `s` pane: one provider's model catalog, with the persisted default
+   * marked, so choosing among several models isn't limited to `models[0]`.
+   */
+  private renderPicker(picker: ModelPickerState, mp: ModelProfileOverlayState): string[] {
+    const row = mp.providers?.find(candidate => candidate.route === picker.route)
+    const models = row?.models ?? []
+    const selected = Math.min(picker.selected, Math.max(0, models.length - 1))
+    const lines: string[] = [bold(secondary(`Model for ${row?.displayName ?? picker.route}`))]
+    if (mp.error !== undefined) lines.push(errorColor(mp.error))
+    models.forEach((model, index) => {
+      const isActive = mp.activeModel?.provider === picker.route && mp.activeModel.model === model.id
+      const marker = isActive ? '● ' : '○ '
+      const name = model.name === undefined || model.name === model.id ? '' : ` — ${model.name}`
+      const text = `${index === selected ? '› ' : '  '}${marker}${model.id}${name}${isActive ? ' (active)' : ''}`
+      lines.push(index === selected ? invert(text) : text)
+    })
+    if (models.length === 0) lines.push(muted('No models in this provider’s catalog.'))
+    lines.push(muted('↑↓ select · enter set active model · esc back'))
+    return lines
+  }
+
+  private handlePickerInput(data: string, picker: ModelPickerState, mp: ModelProfileOverlayState): void {
+    if (matchesKey(data, Key.escape)) {
+      this.actions.closeModelPicker()
+      return
+    }
+    const row = mp.providers?.find(candidate => candidate.route === picker.route)
+    if (row === undefined || row.models.length === 0) return
+    if (matchesKey(data, Key.up)) {
+      this.actions.selectModel(picker.selected - 1)
+      return
+    }
+    if (matchesKey(data, Key.down)) {
+      this.actions.selectModel(picker.selected + 1)
+      return
+    }
+    if (matchesKey(data, Key.enter)) {
+      const model = row.models[clampModelIndex(picker.selected, row.models.length)]
+      if (model !== undefined) this.actions.setActiveModel(picker.route, model.id)
+    }
   }
 
   private renderForm(draft: ProviderDraft, mp: ModelProfileOverlayState): string[] {
@@ -303,16 +346,16 @@ export class ModelProfileOverlay implements Component {
     }
     if (this.models.length === 0) return
     if (matchesKey(data, Key.up)) {
-      this.modelSelected = Math.max(0, this.modelSelected - 1)
+      this.modelSelected = clampModelIndex(this.modelSelected - 1, this.models.length)
       return
     }
     if (matchesKey(data, Key.down)) {
-      this.modelSelected = Math.min(this.models.length - 1, this.modelSelected + 1)
+      this.modelSelected = clampModelIndex(this.modelSelected + 1, this.models.length)
       return
     }
     if (data === 'x') {
       this.models = this.models.filter((_, index) => index !== this.modelSelected)
-      this.modelSelected = Math.max(0, Math.min(this.modelSelected, this.models.length - 1))
+      this.modelSelected = clampModelIndex(this.modelSelected, this.models.length)
     }
   }
 
@@ -320,6 +363,10 @@ export class ModelProfileOverlay implements Component {
     const overlay = this.store.getSnapshot().overlay
     if (overlay.kind !== 'modelProfile') return
     const mp = overlay.modelProfile
+    if (mp.view === 'picker' && mp.picker !== undefined) {
+      this.handlePickerInput(data, mp.picker, mp)
+      return
+    }
     const draft = this.syncFormState(mp)
     if (draft !== undefined) {
       if (this.showModels) this.handleModelListEditorInput(data, draft)

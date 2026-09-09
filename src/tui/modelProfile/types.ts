@@ -66,3 +66,8 @@ export interface ProviderDraft {
   readonly models: readonly ModelEntry[]
   readonly revision: number | undefined
 }
+
+/** Clamps a model-picker cursor index into `[0, catalogLength - 1]` (0 for an empty catalog). */
+export function clampModelIndex(index: number, catalogLength: number): number {
+  return Math.max(0, Math.min(catalogLength - 1, index))
+}

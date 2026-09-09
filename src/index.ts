@@ -73,7 +73,7 @@ import { loadFileIndex } from './tui/fileIndex.js'
 import type { TuiActions } from './tui/actions.js'
 import { readPackageName, readPackageVersion } from './version.js'
 import { checkForUpdate } from './updateCheck.js'
-import type { ProviderDraft, ProviderRow, StoredProviderProfile } from './tui/modelProfile/types.js'
+import { clampModelIndex, type ProviderDraft, type ProviderRow, type StoredProviderProfile } from './tui/modelProfile/types.js'
 import type { PluginRow } from './tui/plugins/types.js'
 import type { AgentPresetRow } from './tui/agentPresets/types.js'
 import type { SubagentRow } from './tui/agents/types.js'
@@ -486,8 +486,10 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
       })
     }
     const previousSelected = currentModelProfile()?.selected ?? 0
+    const active = defaultModel.currentSelection()
     current.store.updateModelProfile({
       providers: rows,
+      activeModel: { provider: active.provider, model: active.model },
       busy: false,
       error: undefined,
       selected: Math.min(previousSelected, Math.max(0, rows.length - 1)),
@@ -643,7 +645,7 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
       ops.push({ op: 'set', path: [...path, 'models'], value: draft.models })
       await services.settings.mutate(ns, ops, draft.revision)
       if (draft.apiKeyDraft !== '') await services.credentials.set(credentialRef(apiKeyRef), draft.apiKeyDraft)
-      current.store.updateModelProfile({ view: 'list', draft: undefined })
+      current.store.updateModelProfile({ view: 'list', draft: undefined, picker: undefined })
       await loadProviders()
     } catch (error) {
       current.store.updateModelProfile({ busy: false, error: error instanceof Error ? error.message : String(error) })
@@ -1349,7 +1351,7 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
         store.closeOverlay()
       },
       backToProviderList() {
-        store.updateModelProfile({ view: 'list', draft: undefined, discovered: undefined, error: undefined })
+        store.updateModelProfile({ view: 'list', draft: undefined, discovered: undefined, error: undefined, picker: undefined })
       },
       selectProvider(index) {
         store.updateModelProfile({ selected: index })
@@ -1401,10 +1403,41 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
       discoverModelsForDraft(draft) {
         void probeModels(draft)
       },
+      openModelPicker(route) {
+        const mp = currentModelProfile()
+        const row = mp?.providers?.find(candidate => candidate.route === route)
+        if (row === undefined) return
+        if (row.models.length === 0) {
+          store.setNotice(`${row.displayName} has no models in its catalog — edit the provider to add one first.`)
+          return
+        }
+        // Start on the active model when this is the active provider, so
+        // reopening the picker shows where the selection already is.
+        const active = mp?.activeModel
+        const activeIndex = active?.provider === route ? row.models.findIndex(model => model.id === active.model) : -1
+        store.updateModelProfile({
+          view: 'picker',
+          picker: { route, selected: activeIndex < 0 ? 0 : activeIndex },
+          error: undefined,
+        })
+      },
+      selectModel(index) {
+        const picker = currentModelProfile()?.picker
+        if (picker === undefined) return
+        const row = currentModelProfile()?.providers?.find(candidate => candidate.route === picker.route)
+        if (row === undefined) return
+        store.updateModelProfile({ picker: { ...picker, selected: clampModelIndex(index, row.models.length) } })
+      },
+      closeModelPicker() {
+        store.updateModelProfile({ view: 'list', picker: undefined, error: undefined })
+      },
       setActiveModel(provider, model) {
         void defaultModel
           .saveSelection({ provider, model })
-          .then(() => store.setNotice(`default model set to ${provider}/${model}`))
+          .then(() => {
+            store.updateModelProfile({ activeModel: { provider, model }, view: 'list', picker: undefined, error: undefined })
+            store.setNotice(`default model set to ${provider}/${model}`)
+          })
           .catch((error: unknown) => {
             store.setNotice(`failed to set default model: ${error instanceof Error ? error.message : String(error)}`)
           })

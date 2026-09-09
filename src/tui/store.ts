@@ -23,7 +23,21 @@ import type { ApprovalPromptState, QuestionPromptState } from './interaction/typ
 import { reasoningOf, textOf } from '../render.js'
 
 /** Which pane of the `/model` overlay is showing. */
-export type ModelProfileView = 'list' | 'form'
+export type ModelProfileView = 'list' | 'form' | 'picker'
+
+/** The persisted default selection, rendered as the `/model` overlay's `(active)` marker. */
+export interface ActiveModelSelection {
+  readonly provider: string
+  readonly model: string
+}
+
+/** Set while the `s` model picker is open over one provider's catalog. */
+export interface ModelPickerState {
+  /** Provider route whose catalog is being picked from. */
+  readonly route: string
+  /** Highlighted catalog index. */
+  readonly selected: number
+}
 
 /** Overlay-owned state for the `/model` provider-profile screen. */
 export interface ModelProfileOverlayState {
@@ -37,6 +51,10 @@ export interface ModelProfileOverlayState {
   readonly discovered: readonly DiscoveredModel[] | undefined
   readonly busy: boolean
   readonly error: string | undefined
+  /** The persisted default from `agentDefaultModel.currentSelection()`; `undefined` until the first load settles. */
+  readonly activeModel: ActiveModelSelection | undefined
+  /** Set while the `s` model picker is open; `undefined` for the list and form panes. */
+  readonly picker: ModelPickerState | undefined
 }
 
 /** Overlay-owned state for the `/presets` agent-preset screen. */
@@ -419,6 +437,8 @@ export class TuiStore {
           discovered: undefined,
           busy: true,
           error: undefined,
+          activeModel: undefined,
+          picker: undefined,
         },
       },
     })

@@ -59,6 +59,16 @@ export interface TuiActions {
   deleteProvider(row: ProviderRow): void
   /** Probe a draft's endpoint via `ctx.llm.discoverModels`. */
   discoverModelsForDraft(draft: ProviderDraft): void
+  /**
+   * Open the `s` model picker over a provider's catalog, starting on the
+   * currently active model (when the provider is the active one). No-ops with
+   * a notice for a provider whose catalog is empty.
+   */
+  openModelPicker(route: string): void
+  /** Move the model picker's selection cursor. */
+  selectModel(index: number): void
+  /** Return from the model picker to the provider list without changing the selection. */
+  closeModelPicker(): void
   /** Save `{provider, model}` as the Agent's default model selection. */
   setActiveModel(provider: string, model: string): void
 

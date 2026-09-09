@@ -23,7 +23,7 @@ An open-source terminal front door for [DeepSeek Harness](https://github.com/dee
 
 - **Status bar** — session id, active LLM provider/model, current agent preset, live run state with spinner, queued-message count, and logged event count.
 - **Stats line** — turn/step counts, LLM/tool wall time, TTFT and decode tok/s, cache-hit %, billed tokens, and a compact context-usage summary; sections hide themselves until there's data.
-- **`/model` provider management** — switch the active model, and add, edit, or delete custom LLM providers (route, base URL, API key, model discovery) without leaving the terminal.
+- **`/model` provider management** — switch the active model by picking from a provider's catalog, and add, edit, or delete custom LLM providers (route, base URL, API key, model discovery) without leaving the terminal.
 - **Agent presets** — start a fresh session on a given preset with `--agent-preset`, or browse and switch presets from `/presets` (fixed once the session's first turn has run).
 - **Session inspectors** — `/trajectory` for a turn/step event ledger with a detail view and filtering, `/context` for a context-window usage breakdown, `/plugins` for the loaded Cordis plugin tree and fiber state.
 - **Collapsed tool calls with a live spinner** — a running tool call shows as a single spinner line in the prompt area; once its result lands, it settles into one collapsed `✓`/`✖` transcript line rather than an inline multi-line card.
@@ -77,7 +77,7 @@ Any row `--dump-config` prints — the model adapter, tool set, sandbox policy, 
 |---|---|
 | any text | follow-up while idle, steering while a turn runs |
 | `/help` | show available commands and keyboard shortcuts |
-| `/model` | manage LLM provider profiles: switch model, add/edit/delete a custom provider |
+| `/model` | manage LLM provider profiles: pick the active model from a provider's catalog (`s` opens the picker; `↑`/`↓` select, `Enter` activates, `Esc` backs out), add/edit/delete a custom provider |
 | `/presets` | view and switch agent presets (fixed once the session's first turn has run) |
 | `/trajectory` | browse the turn/step event ledger with a detail inspector and filter |
 | `/tools` | browse and expand tool cards past their collapsed transcript line |

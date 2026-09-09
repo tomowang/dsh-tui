@@ -347,6 +347,26 @@ describe('TuiStore overlay state machine', () => {
       expect(overlay.modelProfile.view).toBe('list')
       expect(overlay.modelProfile.busy).toBe(true)
       expect(overlay.modelProfile.providers).toBeUndefined()
+      expect(overlay.modelProfile.activeModel).toBeUndefined()
+      expect(overlay.modelProfile.picker).toBeUndefined()
+    }
+  })
+
+  it('updateModelProfile carries the active model and picker state', () => {
+    const store = new TuiStore({ events: [] })
+    store.openModelProfile()
+    store.updateModelProfile({
+      activeModel: { provider: 'deepseek', model: 'deepseek-flash' },
+      view: 'picker',
+      picker: { route: 'deepseek', selected: 2 },
+    })
+
+    const overlay = store.getSnapshot().overlay
+    expect(overlay.kind).toBe('modelProfile')
+    if (overlay.kind === 'modelProfile') {
+      expect(overlay.modelProfile.activeModel).toEqual({ provider: 'deepseek', model: 'deepseek-flash' })
+      expect(overlay.modelProfile.view).toBe('picker')
+      expect(overlay.modelProfile.picker).toEqual({ route: 'deepseek', selected: 2 })
     }
   })
 
