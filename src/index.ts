@@ -701,7 +701,18 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
       })
       current.store.updateModelProfile({ discovered: results, busy: false })
     } catch (error) {
-      current.store.updateModelProfile({ busy: false, error: error instanceof Error ? error.message : String(error) })
+      // `instanceof LlmError` is unreliable here: this plugin's own `LlmError`
+      // import can resolve to a different physical copy of `@deepseek-ai/dsh-llm`
+      // than the one that actually threw (an out-of-tree plugin peer-depending on
+      // a package the host process may load separately). `code` is a plain own
+      // property set by `HarnessError`'s constructor, so it survives that module
+      // boundary even though the prototype chain doesn't — check it directly.
+      const code = error instanceof Error ? (error as { code?: unknown }).code : undefined
+      const message =
+        code === 'NO_DISCOVERY'
+          ? 'This provider does not support model discovery — add models by id below.'
+          : error instanceof Error ? error.message : String(error)
+      current.store.updateModelProfile({ busy: false, error: message })
     }
   }
 
