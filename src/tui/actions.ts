@@ -59,6 +59,8 @@ export interface TuiActions {
   deleteProvider(row: ProviderRow): void
   /** Probe a draft's endpoint via `ctx.llm.discoverModels`. */
   discoverModelsForDraft(draft: ProviderDraft): void
+  /** Drop a stale `/model` overlay error when switching between the form and its models editor. */
+  clearModelProfileError(): void
   /**
    * Open the `s` model picker over a provider's catalog, starting on the
    * currently active model (when the provider is the active one). No-ops with

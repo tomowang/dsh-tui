@@ -26,6 +26,7 @@ function stubActions(): TuiActions {
     saveProvider: vi.fn(),
     deleteProvider: vi.fn(),
     discoverModelsForDraft: vi.fn(),
+    clearModelProfileError: vi.fn(),
     openModelPicker: vi.fn(),
     selectModel: vi.fn(),
     closeModelPicker: vi.fn(),

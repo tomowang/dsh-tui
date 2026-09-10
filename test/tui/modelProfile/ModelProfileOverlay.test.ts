@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { TuiActions } from '../../../src/tui/actions.js'
 import { ModelProfileOverlay } from '../../../src/tui/modelProfile/ModelProfileOverlay.js'
-import type { ProviderRow } from '../../../src/tui/modelProfile/types.js'
+import type { ProviderDraft, ProviderRow } from '../../../src/tui/modelProfile/types.js'
 import { TuiStore } from '../../../src/tui/store.js'
 
 /** Every action is a spy; only the ones a test names are asserted on. */
@@ -29,6 +29,7 @@ function stubActions(): TuiActions {
     saveProvider: vi.fn(),
     deleteProvider: vi.fn(),
     discoverModelsForDraft: vi.fn(),
+    clearModelProfileError: vi.fn(),
     openModelPicker: vi.fn(),
     selectModel: vi.fn(),
     closeModelPicker: vi.fn(),
@@ -213,5 +214,88 @@ describe('ModelProfileOverlay model picker', () => {
     const lines = overlay.render(80)
 
     expect(lines.some(line => line.includes('[no api key] [not registered]'))).toBe(true)
+  })
+})
+
+describe('ModelProfileOverlay models editor', () => {
+  const TAB = '\t'
+
+  function draft(): ProviderDraft {
+    return {
+      route: 'deepseek',
+      isNew: false,
+      settingsNs: 'llm-pi-ai',
+      settingsPath: ['providers', 'deepseek'],
+      displayName: 'DeepSeek',
+      api: 'openai-completions',
+      baseURL: 'https://api.deepseek.com',
+      apiKeyRef: 'DEEPSEEK_API_KEY',
+      apiKeyConfigured: true,
+      apiKeyDraft: '',
+      models: [{ id: 'deepseek-chat' }],
+      revision: 1,
+    }
+  }
+
+  /** Tab off the last text field onto the `Models` row, then open the editor. */
+  function openModelsEditor(overlay: ModelProfileOverlay): void {
+    for (let index = 0; index < 4; index += 1) overlay.handleInput(TAB)
+    overlay.handleInput(ENTER)
+  }
+
+  it('renders a discovery error inside the editor, where `g` was pressed', () => {
+    const actions = stubActions()
+    const { overlay, store } = openWith(actions, {
+      providers: [provider({})],
+      view: 'form',
+      draft: draft(),
+    })
+    openModelsEditor(overlay)
+
+    store.updateModelProfile({ error: 'no model discovery is registered for "llm-deepseek"' })
+
+    expect(overlay.render(80).some(line => line.includes('no model discovery is registered'))).toBe(true)
+  })
+
+  it('triggers discovery for the draft on g', () => {
+    const actions = stubActions()
+    const { overlay } = openWith(actions, {
+      providers: [provider({})],
+      view: 'form',
+      draft: draft(),
+    })
+    openModelsEditor(overlay)
+
+    overlay.handleInput('g')
+
+    expect(actions.discoverModelsForDraft).toHaveBeenCalledTimes(1)
+  })
+
+  it('clears a stale error when backing out to the form', () => {
+    const actions = stubActions()
+    const { overlay } = openWith(actions, {
+      providers: [provider({})],
+      view: 'form',
+      draft: draft(),
+    })
+    openModelsEditor(overlay)
+    vi.mocked(actions.clearModelProfileError).mockClear()
+
+    overlay.handleInput(ESC)
+
+    expect(actions.clearModelProfileError).toHaveBeenCalledTimes(1)
+  })
+
+  it('clears a stale error when entering the editor', () => {
+    const actions = stubActions()
+    const { overlay } = openWith(actions, {
+      providers: [provider({})],
+      view: 'form',
+      draft: draft(),
+    })
+
+    openModelsEditor(overlay)
+
+    expect(actions.clearModelProfileError).toHaveBeenCalledTimes(1)
   })
 })

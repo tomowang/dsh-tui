@@ -260,6 +260,10 @@ export class ModelProfileOverlay implements Component {
       return
     }
     if (matchesKey(data, Key.enter) && this.focused === modelsRow) {
+      // A stale error from the form (or a previous discovery) belongs to the
+      // pane that raised it, so clear it on every pane switch — the editor and
+      // the form each render whatever `error` currently holds.
+      this.actions.clearModelProfileError()
       this.showModels = true
       return
     }
@@ -292,6 +296,7 @@ export class ModelProfileOverlay implements Component {
 
   private renderModelListEditor(mp: ModelProfileOverlayState): string[] {
     const lines: string[] = [bold(secondary('Models'))]
+    if (mp.error !== undefined) lines.push(errorColor(mp.error))
     this.models.forEach((model, index) => {
       const isSelected = !this.modelInputFocused && index === this.modelSelected
       const text = `${isSelected ? '› ' : '  '}${model.id}${model.name === undefined ? '' : ` — ${model.name}`}`
@@ -324,6 +329,9 @@ export class ModelProfileOverlay implements Component {
 
   private handleModelListEditorInput(data: string, draft: ProviderDraft): void {
     if (matchesKey(data, Key.escape)) {
+      // Drop any discovery error before returning to the form, so it can't
+      // surface at the top of a pane it didn't come from.
+      this.actions.clearModelProfileError()
       this.showModels = false
       return
     }

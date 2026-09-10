@@ -1403,6 +1403,9 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
       discoverModelsForDraft(draft) {
         void probeModels(draft)
       },
+      clearModelProfileError() {
+        store.updateModelProfile({ error: undefined })
+      },
       openModelPicker(route) {
         const mp = currentModelProfile()
         const row = mp?.providers?.find(candidate => candidate.route === route)
