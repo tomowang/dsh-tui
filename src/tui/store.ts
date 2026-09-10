@@ -7,10 +7,10 @@
  * @module @tomowang/dsh-tui/tui/store
  */
 
-import type { AgentStatus } from '@deepseek-ai/dsh-agent'
+import type { AgentStatus, AssistantStreamFrame } from '@deepseek-ai/dsh-agent'
 import type { GoalProjection } from '@deepseek-ai/dsh-goal'
 import { BlockAssembler } from '@deepseek-ai/dsh-llm'
-import type { ToolCallId, StreamChunk } from '@deepseek-ai/dsh-llm'
+import type { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent, UserMessage } from '@deepseek-ai/dsh-session'
 import type { SessionStatsProjection } from '@deepseek-ai/dsh-session-stats'
 import type { ContextBreakdownProjection, ContextPressureProjection, TokenUsageProjection } from '@deepseek-ai/dsh-token-meter'
@@ -161,7 +161,7 @@ export interface PresetState {
   readonly blank: boolean
 }
 
-/** The currently-generating step's accumulated text, folded live from `assistant/chunk`. */
+/** The currently-generating step's accumulated text, folded live from `agent/assistant-stream` frames. */
 export interface StreamingState {
   readonly turn: number
   readonly step: number
@@ -254,9 +254,13 @@ export class TuiStore {
   private readonly listeners = new Set<Listener>()
   private lastSeq: number
   // Not part of TuiState: mid-stream assembly state for the in-flight step,
-  // rebuilt fresh whenever a chunk's `{turn, step}` doesn't match the last one.
+  // rebuilt fresh on every 'start' frame. Streaming no longer rides the
+  // durable session log (`assistant/chunk` was removed from `SessionEvent`
+  // in dsh-session 0.1.5-rc.2) — it's a process-local-only `agent/assistant-stream`
+  // Cordis event now, keyed by `{attemptId, revision}` rather than `{turn, step}`
+  // since a bare 'chunk' frame carries only the former.
   private streamingAssembler: BlockAssembler | undefined
-  private streamingKey: { turn: number; step: number } | undefined
+  private currentStream: { attemptId: AssistantStreamFrame['attemptId']; revision: AssistantStreamFrame['revision']; turn: number; step: number } | undefined
   // Not part of TuiState either: a `tool/result` event carries no name/arguments
   // of its own (only `message.source.callId`), so a later `presentResult` needs
   // this O(1) lookup back to its `tool/call` rather than an O(n) history scan.
@@ -279,11 +283,7 @@ export class TuiStore {
       }
     }
     this.state = {
-      // `assistant/chunk` rows from a prior session are never folded into
-      // `streaming` (see appendEvent/foldChunk) — dropping them here too
-      // keeps a resumed session's <Static> transcript free of dead entries
-      // that would only ever render as null.
-      events: initial.events.filter(event => event.type !== 'assistant/chunk'),
+      events: initial.events,
       replayThrough: lastSeq,
       status: 'idle',
       queued: [],
@@ -331,13 +331,9 @@ export class TuiStore {
       this.set({ events: [...this.state.events, event], pendingToolCalls: this.pendingToolCallsSnapshot() })
       return
     }
-    if (event.type === 'assistant/chunk') {
-      this.foldChunk(event.data)
-      return
-    }
     if (event.type === 'assistant/message') {
       this.streamingAssembler = undefined
-      this.streamingKey = undefined
+      this.currentStream = undefined
       this.set({ events: [...this.state.events, event], streaming: undefined })
       return
     }
@@ -349,18 +345,38 @@ export class TuiStore {
     return [...this.pendingToolCallsMap.entries()].map(([callId, call]) => ({ callId, ...call }))
   }
 
-  /** Fold one raw stream chunk into the in-flight step's live text, keyed by `{turn, step}`. */
-  private foldChunk(data: { turn: number; step: number; chunk: StreamChunk }): void {
-    const { turn, step, chunk } = data
-    if (this.streamingKey?.turn !== turn || this.streamingKey?.step !== step) {
+  /**
+   * Fold one process-local `agent/assistant-stream` frame into the live region's
+   * `streaming` text. `'start'` seeds a fresh assembler keyed by `{attemptId,
+   * revision}` (the only fields every frame in the run shares — a bare `'chunk'`
+   * frame carries no `{turn, step}` of its own); a `'chunk'` for a stale/unknown
+   * attempt is dropped rather than guessed at. `'end'` clears `streaming`
+   * defensively for an abandoned attempt with no committed message — the normal
+   * committed case already cleared it via `appendEvent`'s `assistant/message` case,
+   * which always lands before the paired `'end'` frame.
+   */
+  appendAssistantStreamFrame(frame: AssistantStreamFrame): void {
+    if (frame.type === 'start') {
       this.streamingAssembler = new BlockAssembler()
-      this.streamingKey = { turn, step }
+      this.currentStream = { attemptId: frame.attemptId, revision: frame.revision, turn: frame.turn, step: frame.step }
+      this.set({ streaming: undefined })
+      return
     }
-    this.streamingAssembler!.push(chunk)
-    const blocks = this.streamingAssembler!.blocks()
-    const text = textOf(blocks)
-    const reasoningText = reasoningOf(blocks)
-    this.set({ streaming: text === '' && reasoningText === '' ? undefined : { turn, step, text, reasoningText } })
+    if (frame.type === 'chunk') {
+      if (this.currentStream === undefined || this.currentStream.attemptId !== frame.attemptId || this.currentStream.revision !== frame.revision) return
+      const { turn, step } = this.currentStream
+      this.streamingAssembler!.push(frame.chunk)
+      const blocks = this.streamingAssembler!.blocks()
+      const text = textOf(blocks)
+      const reasoningText = reasoningOf(blocks)
+      this.set({ streaming: text === '' && reasoningText === '' ? undefined : { turn, step, text, reasoningText } })
+      return
+    }
+    if (this.currentStream?.attemptId === frame.attemptId && this.currentStream.revision === frame.revision) {
+      this.streamingAssembler = undefined
+      this.currentStream = undefined
+      this.set({ streaming: undefined })
+    }
   }
 
   setStatus(status: AgentStatus): void {

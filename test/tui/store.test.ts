@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
+import type { AssistantStreamFrame } from '@deepseek-ai/dsh-agent'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { TuiStore } from '../../src/tui/store.js'
 
@@ -7,8 +8,16 @@ function event(seq: number): SessionEvent {
   return { type: 'user/message', seq, time: 0, data: { source: { kind: 'user' }, content: [] } } as unknown as SessionEvent
 }
 
-function chunkEvent(seq: number, turn: number, step: number, chunk: unknown): SessionEvent {
-  return { type: 'assistant/chunk', seq, time: 0, data: { turn, step, chunk } } as unknown as SessionEvent
+function startFrame(turn: number, step: number, attemptId = 'attempt-1', revision = 1): AssistantStreamFrame {
+  return { type: 'start', attemptId, revision, turn, step } as unknown as AssistantStreamFrame
+}
+
+function chunkFrame(chunk: unknown, attemptId = 'attempt-1', revision = 1): AssistantStreamFrame {
+  return { type: 'chunk', attemptId, revision, index: 0, time: 0, chunk } as unknown as AssistantStreamFrame
+}
+
+function endFrame(attemptId = 'attempt-1', revision = 1): AssistantStreamFrame {
+  return { type: 'end', attemptId, revision, index: 0, outcome: { kind: 'abandoned' } } as unknown as AssistantStreamFrame
 }
 
 function assistantMessageEvent(seq: number, turn: number, step: number): SessionEvent {
@@ -75,34 +84,47 @@ describe('TuiStore streaming', () => {
   it('folds text-delta chunks into streaming.text without adding to events', () => {
     const store = new TuiStore({ events: [] })
 
-    store.appendEvent(chunkEvent(1, 1, 1, { type: 'block-start', index: 0, blockType: 'text' }))
-    store.appendEvent(chunkEvent(2, 1, 1, { type: 'text-delta', index: 0, text: 'Hel' }))
-    store.appendEvent(chunkEvent(3, 1, 1, { type: 'text-delta', index: 0, text: 'lo' }))
+    store.appendAssistantStreamFrame(startFrame(1, 1))
+    store.appendAssistantStreamFrame(chunkFrame({ type: 'block-start', index: 0, blockType: 'text' }))
+    store.appendAssistantStreamFrame(chunkFrame({ type: 'text-delta', index: 0, text: 'Hel' }))
+    store.appendAssistantStreamFrame(chunkFrame({ type: 'text-delta', index: 0, text: 'lo' }))
 
     const snapshot = store.getSnapshot()
     expect(snapshot.streaming).toEqual({ turn: 1, step: 1, text: 'Hello', reasoningText: '' })
     expect(snapshot.events).toEqual([])
   })
 
-  it('resets the accumulator when turn/step changes', () => {
+  it('resets the accumulator on a new start frame', () => {
     const store = new TuiStore({ events: [] })
 
-    store.appendEvent(chunkEvent(1, 1, 1, { type: 'block-start', index: 0, blockType: 'text' }))
-    store.appendEvent(chunkEvent(2, 1, 1, { type: 'text-delta', index: 0, text: 'first step' }))
-    store.appendEvent(chunkEvent(3, 1, 2, { type: 'block-start', index: 0, blockType: 'text' }))
-    store.appendEvent(chunkEvent(4, 1, 2, { type: 'text-delta', index: 0, text: 'second step' }))
+    store.appendAssistantStreamFrame(startFrame(1, 1, 'attempt-1', 1))
+    store.appendAssistantStreamFrame(chunkFrame({ type: 'block-start', index: 0, blockType: 'text' }, 'attempt-1', 1))
+    store.appendAssistantStreamFrame(chunkFrame({ type: 'text-delta', index: 0, text: 'first step' }, 'attempt-1', 1))
+    store.appendAssistantStreamFrame(startFrame(1, 2, 'attempt-1', 2))
+    store.appendAssistantStreamFrame(chunkFrame({ type: 'block-start', index: 0, blockType: 'text' }, 'attempt-1', 2))
+    store.appendAssistantStreamFrame(chunkFrame({ type: 'text-delta', index: 0, text: 'second step' }, 'attempt-1', 2))
 
     expect(store.getSnapshot().streaming).toEqual({ turn: 1, step: 2, text: 'second step', reasoningText: '' })
+  })
+
+  it('ignores a chunk frame for an attempt/revision other than the current one', () => {
+    const store = new TuiStore({ events: [] })
+
+    store.appendAssistantStreamFrame(startFrame(1, 1, 'attempt-1', 1))
+    store.appendAssistantStreamFrame(chunkFrame({ type: 'text-delta', index: 0, text: 'stale' }, 'attempt-1', 0))
+
+    expect(store.getSnapshot().streaming).toBeUndefined()
   })
 
   it('folds reasoning-delta chunks into streaming.reasoningText alongside text', () => {
     const store = new TuiStore({ events: [] })
 
-    store.appendEvent(chunkEvent(1, 1, 1, { type: 'block-start', index: 0, blockType: 'reasoning' }))
-    store.appendEvent(chunkEvent(2, 1, 1, { type: 'reasoning-delta', index: 0, text: 'weighing op' }))
-    store.appendEvent(chunkEvent(3, 1, 1, { type: 'reasoning-delta', index: 0, text: 'tions' }))
-    store.appendEvent(chunkEvent(4, 1, 1, { type: 'block-start', index: 1, blockType: 'text' }))
-    store.appendEvent(chunkEvent(5, 1, 1, { type: 'text-delta', index: 1, text: 'answer' }))
+    store.appendAssistantStreamFrame(startFrame(1, 1))
+    store.appendAssistantStreamFrame(chunkFrame({ type: 'block-start', index: 0, blockType: 'reasoning' }))
+    store.appendAssistantStreamFrame(chunkFrame({ type: 'reasoning-delta', index: 0, text: 'weighing op' }))
+    store.appendAssistantStreamFrame(chunkFrame({ type: 'reasoning-delta', index: 0, text: 'tions' }))
+    store.appendAssistantStreamFrame(chunkFrame({ type: 'block-start', index: 1, blockType: 'text' }))
+    store.appendAssistantStreamFrame(chunkFrame({ type: 'text-delta', index: 1, text: 'answer' }))
 
     expect(store.getSnapshot().streaming).toEqual({ turn: 1, step: 1, text: 'answer', reasoningText: 'weighing options' })
   })
@@ -110,8 +132,9 @@ describe('TuiStore streaming', () => {
   it('assistant/message clears streaming and appends the settled event', () => {
     const store = new TuiStore({ events: [] })
 
-    store.appendEvent(chunkEvent(1, 1, 1, { type: 'block-start', index: 0, blockType: 'text' }))
-    store.appendEvent(chunkEvent(2, 1, 1, { type: 'text-delta', index: 0, text: 'partial' }))
+    store.appendAssistantStreamFrame(startFrame(1, 1))
+    store.appendAssistantStreamFrame(chunkFrame({ type: 'block-start', index: 0, blockType: 'text' }))
+    store.appendAssistantStreamFrame(chunkFrame({ type: 'text-delta', index: 0, text: 'partial' }))
     store.appendEvent(assistantMessageEvent(3, 1, 1))
 
     const snapshot = store.getSnapshot()
@@ -119,15 +142,15 @@ describe('TuiStore streaming', () => {
     expect(snapshot.events.map(e => e.seq)).toEqual([3])
   })
 
-  it('drops persisted assistant/chunk rows from the seeded events without seeding streaming', () => {
-    const store = new TuiStore({
-      events: [event(1), chunkEvent(2, 1, 1, { type: 'text-delta', index: 0, text: 'stale' }), assistantMessageEvent(3, 1, 1)],
-    })
+  it('an end frame clears streaming for an abandoned attempt with no committed message', () => {
+    const store = new TuiStore({ events: [] })
 
-    const snapshot = store.getSnapshot()
-    expect(snapshot.events.map(e => e.seq)).toEqual([1, 3])
-    expect(snapshot.streaming).toBeUndefined()
-    expect(snapshot.replayThrough).toBe(3)
+    store.appendAssistantStreamFrame(startFrame(1, 1))
+    store.appendAssistantStreamFrame(chunkFrame({ type: 'block-start', index: 0, blockType: 'text' }))
+    store.appendAssistantStreamFrame(chunkFrame({ type: 'text-delta', index: 0, text: 'partial' }))
+    store.appendAssistantStreamFrame(endFrame())
+
+    expect(store.getSnapshot().streaming).toBeUndefined()
   })
 })
 

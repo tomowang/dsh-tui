@@ -31,7 +31,7 @@ import { GoalError } from '@deepseek-ai/dsh-goal'
 import type { GoalProjection, GoalRef, GoalView } from '@deepseek-ai/dsh-goal'
 import type {} from '@deepseek-ai/dsh-plan-mode'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import type { Session } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { SettingsPathOp, SettingsScope } from '@deepseek-ai/dsh-settings'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
@@ -58,7 +58,7 @@ import { foldSessionTitle, SessionTitleInvalidError } from '@deepseek-ai/dsh-ses
 import type { SubagentListEntry } from '@deepseek-ai/dsh-subagent'
 // Type-only: resolves ctx.sessionPersistence for the /resume picker's
 // cwd-scoped past-session listing.
-import type {} from '@deepseek-ai/dsh-session-persistence'
+import type { SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
 import type {} from '@deepseek-ai/dsh-token-meter'
 
 import { ensureSessionIdPrefix, stripSessionIdPrefix } from './sessionId.js'
@@ -538,6 +538,16 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
    * live keys and the on-disk persisted directory), so prefixing it would
    * look up a session that doesn't exist under either name.
    */
+  /** Read a stored session's full event log via a short-lived read handle — `SessionPersistence` no longer offers a one-shot `inspect()`. */
+  async function readSessionEvents(persistence: SessionPersistence, id: SessionId): Promise<readonly SessionEvent[]> {
+    const handle = await persistence.open(id, 'read')
+    try {
+      return (await handle.read()).events
+    } finally {
+      await handle.close()
+    }
+  }
+
   async function loadAgentDetail(childId: string): Promise<void> {
     stopAgentDetailStream()
     const sessionId = SessionId(childId)
@@ -558,15 +568,15 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
       return
     }
     try {
-      const inspected = await sessionPersistence.inspect(sessionId)
+      const events = await readSessionEvents(sessionPersistence, sessionId)
       // The reader may have cycled to a different child (or back to main)
-      // while this awaited — an older, slower inspect() landing after a
-      // newer one would otherwise silently overwrite the transcript
-      // actually being viewed with a stale one. There's no cancellation on
-      // sessionPersistence.inspect() itself, so this just discards a result
-      // nothing wants any more rather than applying it.
+      // while this awaited — an older, slower read landing after a newer
+      // one would otherwise silently overwrite the transcript actually
+      // being viewed with a stale one. There's no cancellation on the read,
+      // so this just discards a result nothing wants any more rather than
+      // applying it.
       if (current.store.getSnapshot().viewingChild?.childId !== childId) return
-      current.store.updateViewingChild({ events: inspected.events, live: false, busy: false, error: undefined })
+      current.store.updateViewingChild({ events, live: false, busy: false, error: undefined })
     } catch (error) {
       if (current.store.getSnapshot().viewingChild?.childId !== childId) return
       current.store.updateViewingChild({ busy: false, error: error instanceof Error ? error.message : String(error) })
@@ -577,20 +587,20 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
    * Fetch this cwd's past sessions (headers only — cheap, no full-log parse)
    * and refresh the open `/resume` overlay's row list. A header alone has no
    * title (that's folded from `session/title` events, not stored metadata),
-   * so each candidate gets one `inspect` — a full log read — to fold its
-   * title; a failed or title-less inspect just leaves that row's title
-   * `undefined` ("untitled") rather than dropping the row or the listing.
+   * so each candidate gets one full log read to fold its title; a failed or
+   * title-less read just leaves that row's title `undefined` ("untitled")
+   * rather than dropping the row or the listing.
    */
   async function loadResumeSessions(): Promise<void> {
     if (sessionPersistence === undefined) return
     try {
-      const headers = await sessionPersistence.list()
+      const headers = (await sessionPersistence.list()).map(snapshot => snapshot.header)
       const candidates = selectResumeCandidates(headers, process.cwd(), current.agent.session.id)
       const rows = await Promise.all(candidates.map(async (header): Promise<SessionResumeRow> => {
         let title: string | undefined
         try {
-          const inspected = await sessionPersistence.inspect(header.id)
-          title = foldSessionTitle(inspected.events)?.title
+          const events = await readSessionEvents(sessionPersistence, header.id)
+          title = foldSessionTitle(events)?.title
         } catch {
           title = undefined
         }
@@ -1025,6 +1035,10 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
         if (event.type === 'tool/call' || event.type === 'tool/result') {
           refreshAgentsStrip()
         }
+      }),
+      ctx.on('agent/assistant-stream', (payload) => {
+        if (payload.agent !== agent) return
+        store.appendAssistantStreamFrame(payload.frame)
       }),
       ctx.on('agent/status', (payload) => {
         if (payload.agent !== agent) return
