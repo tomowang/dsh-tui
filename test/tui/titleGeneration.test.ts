@@ -35,7 +35,7 @@ describe('collectRenameSourceTexts', () => {
   })
 
   it('excludes a plugin-injected user/message (subdir AGENTS.md, skill content, cron notices, …)', () => {
-    const events = [event('user/message', { source: { kind: 'plugin' }, content: [{ type: 'text', text: 'injected context' }] })]
+    const events = [event('user/message', { source: { kind: 'skill-loader' }, content: [{ type: 'text', text: 'injected context' }] })]
     expect(collectRenameSourceTexts(events)).toEqual([])
   })
 

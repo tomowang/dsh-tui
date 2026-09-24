@@ -36,8 +36,8 @@ export class AgentPresetsOverlay implements Component {
     if (busy && rows.length === 0) lines.push(muted('Loading…'))
     rows.forEach((row, index) => {
       const marker = row.id === current ? '● ' : '○ '
-      const trust = row.trust === 'user' ? ' (custom)' : ''
-      const row0 = `${index === selected ? '› ' : '  '}${marker}${row.label}${trust}`
+      const custom = row.builtIn ? '' : ' (custom)'
+      const row0 = `${index === selected ? '› ' : '  '}${marker}${row.label}${custom}`
       lines.push(index === selected ? invert(row0) : row0)
       if (row.broken !== undefined) lines.push(errorColor(`    broken: ${row.broken}`))
       else if (row.description !== undefined) lines.push(muted(`    ${row.description}`))

@@ -6,8 +6,8 @@
 
 - id: system-prompt
   config:
-    persona: >-
-      You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.
+    personaPrefix: You are a coding agent powered by the {{model}} model.
+    personaSuffix: Your working directory is {{cwd}}.
 
 # Module-reload HMR redraws would fight the interactive terminal; the
 # launcher's watch-only fallback still keeps the user patch layers live.
@@ -35,23 +35,120 @@
       name: '@deepseek-ai/dsh-session-stats'
 
     # Preset roster and mid-session preset switching for `/presets` and
-    # `--agent-preset`. dsh-base doesn't mount this row (only dsh-web-app's
-    # bundle does); the deepseek-harness CLI's own profile-boot patches
-    # shipped preset roots onto any `agent-presets` row regardless of which
-    # layer inserted it, so mounting a bare copy (with a required `default`)
-    # here is enough to pick up the standard/code/minimal/cordis roster.
-    - id: agent-presets
-      name: '@deepseek-ai/dsh-agent-presets'
+    # `--agent-preset`. dsh-base doesn't mount the registry (only
+    # dsh-web-app's bundle does), and the CLI no longer patches shipped preset
+    # roots onto it: each preset is its own `@deepseek-ai/dsh-agent-preset`
+    # row, vendored under `presets/` and listed after this file in
+    # `package.json`'s `dsh.bundle.patch`.
+    - id: agent-preset-registry
+      name: '@deepseek-ai/dsh-agent-preset-registry'
       config:
         default: standard
 
     # Host-owned opt-in the shipped presets' `tool-subagent` rows require:
-    # the standard/code/minimal/cordis presets all set `modelSelectionSettings:
-    # true` on their delegation tool, which throws at preset-mount time
-    # ("requires @deepseek-ai/dsh-tool-subagent/model-selection-settings in
-    # the Host scope") without this row composed somewhere above them.
-    # dsh-base's own host-plane `tool-subagent` doesn't request the flag, so
-    # dsh-base never needed this; mirrors dsh-web-app's bundle, which mounts
-    # the same row for the same reason.
+    # the standard/ptc/cordis presets set `modelSelectionSettings: true` on
+    # their delegation tool, which throws at preset-mount time ("requires
+    # @deepseek-ai/dsh-tool-subagent/model-selection-settings in the Host
+    # scope") without this row composed somewhere above them. dsh-base's own
+    # host-plane `tool-subagent` doesn't request the flag, so dsh-base never
+    # needed this; mirrors dsh-web-app's bundle, which mounts the same row for
+    # the same reason.
     - id: subagent-model-selection-settings
       name: '@deepseek-ai/dsh-tool-subagent/model-selection-settings'
+
+    # The Creator (`cordis`) preset's `tool-cordis` row reads the
+    # `cordisInspect` registry this runner provides; dsh-base doesn't mount
+    # it (only dsh-web-app's bundle does). Mirrors that bundle's row.
+    - id: cordis-host-runner
+      name: '@deepseek-ai/dsh-cordis-host-runner'
+
+    # The Host inspect providers are process-global: the registry rejects a
+    # duplicate id, so they register here once and every preset's
+    # `tool-cordis` row reads them. Mirrors dsh-web-app's bundle.
+    - id: cordis-inspect-providers
+      name: '@deepseek-ai/dsh-tool-cordis/host'
+
+# ── the agent plane moves behind agent presets ─────────────────────────────
+#
+# Mirrors dsh-web-app's bundle: every row below is what ONE agent contributes
+# to the host registries (tools, prompt sections, delegation backends).
+# dsh-base composes them process-wide; with presets mounted, each session's
+# preset owns them instead, and leaving the host copies on would register
+# every tool twice. Disabled rather than deleted so a base reorder can't
+# silently bring one back. The registries these rows feed (background jobs,
+# skills, goals, the token meter, subagents) stay on the host plane.
+
+- id: tool-plugin-manager
+  disabled: true
+
+- id: tool-bash
+  disabled: true
+
+- id: tool-pwsh
+  disabled: true
+
+- id: tool-jobs
+  disabled: true
+
+- id: tool-fs
+  disabled: true
+
+- id: tool-fs-search
+  disabled: true
+
+- id: skill-filesystem
+  disabled: true
+
+- id: tool-skill
+  disabled: true
+
+- id: command-goal
+  disabled: true
+
+- id: tool-goal
+  disabled: true
+
+- id: plan-mode
+  disabled: true
+
+- id: compaction-basic
+  disabled: true
+
+- id: command-compact
+  disabled: true
+
+- id: tool-result-pruner
+  disabled: true
+
+- id: tool-subagent-control
+  disabled: true
+
+- id: tool-subagent-list-agents
+  disabled: true
+
+- id: tool-subagent
+  disabled: true
+
+- id: tool-subagent-fork
+  disabled: true
+
+- id: workflow-ptc
+  disabled: true
+
+- id: tool-workflow
+  disabled: true
+
+# `base` ships this row disabled; the preset-plane gate reads declared row ids
+# without regard to `disabled`, so this row must stay to keep `tool-ralph` off
+# the host plane and out of collision with every preset's row.
+- id: tool-ralph
+  disabled: true
+
+- id: agent-instructions
+  disabled: true
+
+- id: tool-todo
+  disabled: true
+
+- id: tool-web
+  disabled: true

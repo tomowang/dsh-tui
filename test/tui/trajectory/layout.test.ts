@@ -19,7 +19,7 @@ function fixtureEvents(): SessionEvent[] {
       turn: 1,
       step: 1,
       message: {
-        content: [{ type: 'tool-result', toolCallId: 'c1', content: [{ type: 'text', text: 'file.txt' }], isError: false }],
+        content: [{ type: 'text', text: 'file.txt' }], isError: false,
         source: { kind: 'tool', callId: 'c1' },
       },
     }),
@@ -31,7 +31,7 @@ function fixtureEvents(): SessionEvent[] {
       turn: 2,
       step: 1,
       message: {
-        content: [{ type: 'tool-result', toolCallId: 'c2', content: [{ type: 'text', text: 'denied' }], isError: true }],
+        content: [{ type: 'text', text: 'denied' }], isError: true,
         source: { kind: 'tool', callId: 'c2' },
       },
     }),
@@ -102,12 +102,12 @@ describe('buildTrajectoryRows', () => {
     expect(turn1).toMatchObject({ kind: 'turn', turn: 1, aborted: undefined })
   })
 
-  it('classifies a plugin-injected user/message as a context record with a collapsed label', () => {
+  it('classifies a producer-injected user/message as a context record with a collapsed label', () => {
     const rows = buildTrajectoryRows(
       [
         event('turn/start', 1, { turn: 1 }),
         event('user/message', 2, {
-          source: { kind: 'plugin', plugin: 'skill-loader', form: 'notice', summary: 'loaded foo skill' },
+          source: { kind: 'skill-loader', form: 'notice', summary: 'loaded foo skill' },
           content: [{ type: 'text', text: 'full skill body' }],
         }),
       ],
@@ -115,13 +115,13 @@ describe('buildTrajectoryRows', () => {
     )
     const record = recordRows(rows)[0]?.record
     expect(record?.kind).toBe('context')
-    // The one-line ledger label stays collapsed to the plugin/summary tag...
+    // The one-line ledger label stays collapsed to the source kind/summary tag...
     expect(record?.label).toBe('skill-loader · loaded foo skill')
     // ...but `payload` (reached only via the Preview/Raw tabs, not the
     // ledger row itself) carries the full injected content, matching the
     // web ledger.
     expect(record?.payload).toBe('full skill body')
-    expect(record?.source).toEqual({ kind: 'plugin', plugin: 'skill-loader', form: 'notice', summary: 'loaded foo skill' })
+    expect(record?.source).toEqual({ kind: 'skill-loader', form: 'notice', summary: 'loaded foo skill' })
   })
 
   it('carries source for a direct human prompt too, not just injected context', () => {

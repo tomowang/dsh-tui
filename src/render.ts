@@ -6,7 +6,7 @@
  */
 
 import { diffLines } from 'diff'
-import type { ToolCallId, ContentBlock } from '@deepseek-ai/dsh-llm'
+import type { ToolCallId, ContentBlock, MessageSource } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { FileDiff, ToolCallView, ToolDefinition, ToolResult, ToolResultView } from '@deepseek-ai/dsh-tools'
 import { renderMarkdown } from './markdown.js'
@@ -287,19 +287,19 @@ type ToolResultResolution =
 /** Shared by the transcript's compact line and the Tool Cards overlay's summary/detail, so all three read the same icon and presented view instead of re-deriving it. */
 function resolveToolResult(event: Extract<SessionEvent, { type: 'tool/result' }>, options: RenderOptions): ToolResultResolution {
   // `error` marks an internal/harness-level failure (distinct from `isError`
-  // on the block, which is the ordinary model-facing outcome). An internal
+  // on the message, which is the ordinary model-facing outcome). An internal
   // failure is the harness's to report, not a tool's to reformat, so it
   // bypasses presentation entirely.
   if (event.data.error !== undefined) {
     return { kind: 'error', line: `${red('✖')} ${event.data.error.code}: ${event.data.error.name}` }
   }
-  const [block] = event.data.message.content
-  const failed = block.isError === true
+  const { message } = event.data
+  const failed = message.isError === true
   const icon = failed ? red('✖') : cyan('✓')
-  const callId = event.data.message.source.callId
-  const result: ToolResult = { content: block.content, isError: failed, ...event.data.meta !== undefined ? { meta: event.data.meta } : {} }
+  const callId = message.source.callId
+  const result: ToolResult = { content: [...message.content], isError: failed, ...event.data.meta !== undefined ? { meta: event.data.meta } : {} }
   const presented = presentResultSafely(callId, result, options)
-  return { kind: 'ok', icon, content: block.content, presented, callTitle: resolveCallTitle(callId, options) }
+  return { kind: 'ok', icon, content: message.content, presented, callTitle: resolveCallTitle(callId, options) }
 }
 
 /** A presented completed call's lines: an outcome-colored header plus card-specific body. `callTitle` is the paired call's presented title — a result view's own `title` field defers to it (the "pending-state title") when omitted, so it comes before the flat fallback name. */
@@ -385,6 +385,20 @@ function goalChangeLine(change: SessionEvent<'goal/change'>['data']): string {
 }
 
 /**
+ * One-line label for synthetic (non-human) `user/message` context: the
+ * producer's own `source.kind`, plus the one-line account a producer
+ * declaring `form: 'notice'` must record. Each producer owns its kind (there
+ * is no shared `plugin` catch-all), so this reads only the shared
+ * `ContextFormed` fields and falls through unknown kinds.
+ * @param source - the message's source.
+ * @returns e.g. `agents-md` or `cron · nightly sync fired`.
+ */
+export function contextSourceLabel(source: MessageSource): string {
+  const summary = 'form' in source && source.form === 'notice' && 'summary' in source ? source.summary : undefined
+  return `${source.kind}${summary === undefined ? '' : ` · ${summary}`}`
+}
+
+/**
  * Format one durable session event as a terminal line, or `undefined` for
  * events this viewer does not present. Unknown event types are silently
  * skipped: the log's vocabulary is merge-extensible and a transcript viewer
@@ -403,10 +417,6 @@ export function formatEvent(event: SessionEvent, options: RenderOptions): string
         const text = textOf(event.data.content)
         return text === '' ? undefined : `${dim('you ›')} ${text}`
       }
-      if (source.kind === 'plugin') {
-        const summary = source.form === 'notice' ? source.summary : undefined
-        return `${dim('⊕ context ›')} ${source.plugin}${summary === undefined ? '' : ` · ${summary}`}`
-      }
       // An admitted goal continuation round: collapsed to a label like the
       // web portal's context rows, but naming the round so automatic
       // continuation is legible in the transcript. The `<goal_round>` prompt
@@ -414,7 +424,7 @@ export function formatEvent(event: SessionEvent, options: RenderOptions): string
       if (source.kind === 'goal') {
         return `${dim('⊕ goal ›')} round ${source.round}`
       }
-      return `${dim('⊕ context ›')} ${source.kind}`
+      return `${dim('⊕ context ›')} ${contextSourceLabel(source)}`
     }
     case 'assistant/message': {
       const content = event.data.message.content

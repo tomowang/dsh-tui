@@ -22,18 +22,21 @@ import type { Agent, ModelSelectionRef } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
 // Type-only: carries the `agent-preset/selected` SessionEventMap augmentation
 // (declared in the module's own session.ts) alongside AgentPreset.
-import type {} from '@deepseek-ai/dsh-agent-presets'
-import type { AgentPreset } from '@deepseek-ai/dsh-agent-presets'
+import type {} from '@deepseek-ai/dsh-agent-preset-registry'
+import type { AgentPreset } from '@deepseek-ai/dsh-agent-preset-registry'
+import { isBuiltInPreset, presetDisplayText } from '@deepseek-ai/dsh-agent-preset-registry/display'
+import type { BuiltInPresetCopyKey, PresetDisplayText } from '@deepseek-ai/dsh-agent-preset-registry/display'
 import { ManualCompactionError } from '@deepseek-ai/dsh-compaction'
 import type { ManualCompactionErrorCode } from '@deepseek-ai/dsh-compaction'
 import { BlockAssembler, createUserMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import type { ContextFormed } from '@deepseek-ai/dsh-llm'
 import { GoalError } from '@deepseek-ai/dsh-goal'
 import type { GoalProjection, GoalRef, GoalView } from '@deepseek-ai/dsh-goal'
 import type {} from '@deepseek-ai/dsh-plan-mode'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
-import type { SettingsPathOp, SettingsScope } from '@deepseek-ai/dsh-settings'
+import type { SettingsPathOp } from '@deepseek-ai/dsh-settings'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type { ApprovalOutcome, ApprovalRequest } from '@deepseek-ai/dsh-user-approval'
 import { UserQuestionError } from '@deepseek-ai/dsh-user-questions'
@@ -73,6 +76,7 @@ import { loadFileIndex } from './tui/fileIndex.js'
 import type { TuiActions } from './tui/actions.js'
 import { readPackageName, readPackageVersion } from './version.js'
 import { checkForUpdate } from './updateCheck.js'
+import { appendPromptHistory, defaultPromptHistoryPath, loadPromptHistory } from './promptHistory.js'
 import { clampModelIndex, type ProviderDraft, type ProviderRow, type StoredProviderProfile } from './tui/modelProfile/types.js'
 import type { PluginRow } from './tui/plugins/types.js'
 import type { AgentPresetRow } from './tui/agentPresets/types.js'
@@ -80,6 +84,13 @@ import type { SubagentRow } from './tui/agents/types.js'
 import type { SessionResumeRow } from './tui/resume/types.js'
 import { selectResumeCandidates } from './tui/resume/select.js'
 import type { QuestionAnswer, QuestionOptionRow } from './tui/interaction/types.js'
+
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    /** The on-demand `/rename` title-generation request (`generateSessionTitle`); producers own their kind, there is no shared `plugin` kind. */
+    'dsh-tui': { kind: 'dsh-tui' } & ContextFormed
+  }
+}
 
 /** Stable Cordis plugin name. */
 export const name = 'tui'
@@ -89,16 +100,6 @@ export const inject = ['agentDefaultModel', 'agents', 'sessions']
 
 /** Settings namespace hand-declared/custom provider profiles are stored under. */
 const CUSTOM_PROVIDER_NAMESPACE = 'llm-pi-ai'
-
-/** Settings namespace submitted-line history is persisted under, for up/down-arrow recall across process restarts. */
-const HISTORY_NAMESPACE = 'tui-history'
-
-/** Persisted prompt-history shape: previously submitted lines, oldest first. */
-interface HistorySettings {
-  entries: string[]
-}
-
-const HistorySettings: z<HistorySettings> = z.object({ entries: z.array(z.string()) })
 
 /** Read a nested value out of an untyped resolved/raw settings section. */
 function getAtPath(value: unknown, path: readonly string[]): unknown {
@@ -147,21 +148,20 @@ const COMPACTION_ERROR_MESSAGES: Record<ManualCompactionErrorCode, string> = {
  * Any other preset id (a locally authored one) falls back to its own `name`
  * metadata, then its raw id.
  */
-const BUILT_IN_PRESET_LABELS: Record<string, string> = {
-  standard: 'Standard mode',
-  code: 'Code mode',
-  minimal: 'Minimal mode',
-  cordis: 'Creator mode',
+const BUILT_IN_PRESET_COPY: Record<BuiltInPresetCopyKey, string> = {
+  presetStandardName: 'Standard mode',
+  presetStandardDescription: 'Work with code, files, and information. Suitable for most tasks, with search, editing, terminal commands, and other tools available as needed.',
+  presetPtcName: 'PTC mode',
+  presetPtcDescription: 'Includes all Standard mode capabilities. Better suited to tasks that call tools in batches and then filter, organize, deduplicate, count, or summarize the results.',
+  presetMinimalName: 'Minimal mode',
+  presetMinimalDescription: 'The agent works using only a terminal tool. Useful for testing and comparing its basic performance.',
+  presetCordisName: 'Creator mode',
+  presetCordisDescription: 'Customize DSH through conversation. Let the agent write plugins that add features or UI, or combine tools and prompts to create your own mode.',
 }
 
-/** Display label for a bare preset id, without fetching its metadata. */
-function presetLabelForId(id: string): string {
-  return BUILT_IN_PRESET_LABELS[id] ?? id
-}
-
-/** Display label for a resolved preset row, preferring its own metadata over the raw id. */
-function presetRowLabel(preset: AgentPreset): string {
-  return BUILT_IN_PRESET_LABELS[preset.id] ?? preset.name ?? preset.id
+/** Display copy for a preset row: English copy for a shipped preset (which publishes no name of its own), else the preset's own metadata. */
+function presetText(preset: { id: string, name?: string, description?: string }): PresetDisplayText {
+  return presetDisplayText(preset, key => BUILT_IN_PRESET_COPY[key])
 }
 
 /** Whether `session` has run no turn yet — the only state a preset switch is accepted in, mirroring the harness's own `sessionBlank`. */
@@ -169,7 +169,7 @@ function sessionBlank(session: Session): boolean {
   return !session.snapshotEvents().some(event => event.type === 'turn/start')
 }
 
-/** Join one `ctx.subagents.listChildren()` entry into the agents-strip's plain row shape. */
+/** Join one direct `ctx.subagents.listDescendants()` entry into the agents-strip's plain row shape. */
 function toSubagentRow(entry: SubagentListEntry): SubagentRow {
   if (entry.kind === 'diagnostic') return { kind: 'diagnostic', id: entry.id, diagnostic: entry.reason }
   return {
@@ -336,33 +336,17 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
   // instead of refusing to start (`/resume <id>` itself still works — it
   // goes through `agents.resume`, not this seam).
   const sessionPersistence = ctx.get('sessionPersistence')
-  // Same optional-service pattern: a profile without a mounted settings
-  // service just keeps prompt history in memory for the process's lifetime
-  // instead of refusing to start. Registration can also fail loud on an
-  // invalid stored section — degrade the same way rather than crash.
-  const settingsForHistory = ctx.get('settings')
-  let historyScope: SettingsScope<HistorySettings> | undefined
-  if (settingsForHistory !== undefined) {
-    try {
-      historyScope = settingsForHistory.register(HISTORY_NAMESPACE, HistorySettings)
-    } catch {
-      historyScope = undefined
-    }
-  }
+  // Prompt history persists to its own append-only file under the harness
+  // home (see `promptHistory.ts`); any read/write failure just leaves recall
+  // in memory for the process's lifetime instead of refusing to start.
+  const historyPath = defaultPromptHistoryPath()
+  let lastPersistedLine: string | undefined
 
-  /**
-   * Best-effort persist of one new history line. Reads the settings scope's
-   * current resolved value rather than this process's own `promptHistory`
-   * copy — the file provider hot-reloads other processes' writes into it —
-   * so two `dsh-tui` processes appending around the same time are less
-   * likely to clobber each other than a naive replace-with-local-array
-   * write would be. Not a real lock: a tight enough race can still stomp.
-   */
+  /** Best-effort persist of one new history line, skipping an immediate repeat of the last one persisted. */
   function persistHistory(line: string): void {
-    if (historyScope === undefined) return
-    const current = historyScope.get().entries
-    if (current.at(-1) === line) return
-    void historyScope.replace({ entries: [...current, line] }).catch(() => {})
+    if (lastPersistedLine === line) return
+    lastPersistedLine = line
+    void appendPromptHistory(historyPath, line)
   }
 
   /** Guard for the three optional model-profile services, together or not at all. Re-resolved on every call, not cached: a profile that mounts these after startup should still be picked up. */
@@ -422,7 +406,7 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
   function currentPresetState(agent: Agent): PresetState | undefined {
     if (presets === undefined) return undefined
     const id = presets.composedPreset(agent.ctx)
-    return { current: id === undefined ? undefined : presetLabelForId(id), blank: sessionBlank(agent.session) }
+    return { current: id === undefined ? undefined : presetText({ id }).name, blank: sessionBlank(agent.session) }
   }
 
   /** Snapshot the loader's current entry tree into plain display rows, or `undefined` without a mounted loader. */
@@ -503,9 +487,9 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
       const list = await presets.list()
       const rows: AgentPresetRow[] = list.map(preset => ({
         id: preset.id,
-        label: presetRowLabel(preset),
-        description: preset.description,
-        trust: preset.trust,
+        label: presetText(preset).name,
+        description: presetText(preset).description,
+        builtIn: isBuiltInPreset(preset),
         broken: preset.broken,
       }))
       current.store.updateAgentPresets({ rows, busy: false, error: undefined })
@@ -528,7 +512,7 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
    * land,
    * subscribed the same way the main session's own transcript is (see the
    * `session/event` listener in `attachSession`); a child that's already
-   * finished — or vanished between `listChildren`'s snapshot and this call —
+   * finished — or vanished between `listDescendants`'s snapshot and this call —
    * falls back to its persisted log via `ctx.sessionPersistence`, the same
    * call `loadResumeSessions` makes.
    *
@@ -893,9 +877,10 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
 
   // Owned here (outside the Ink tree) rather than inside PromptInput so `/clear`'s
   // remount doesn't lose the reader's up/down-arrow recall. Seeded from the
-  // settings-backed history namespace (when mounted) so recall also survives
-  // process restarts, not just `/clear`.
-  const promptHistory: string[] = historyScope !== undefined ? [...historyScope.get().entries] : []
+  // persisted history file so recall also survives process restarts, not
+  // just `/clear`.
+  const promptHistory: string[] = loadPromptHistory(historyPath)
+  lastPersistedLine = promptHistory.at(-1)
 
   /**
    * On-demand title generation for bare `/rename`: one auxiliary `ctx.llm`
@@ -922,7 +907,7 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
       model: route.model,
       messages: [createUserMessage({
         content: [{ type: 'text', text: JSON.stringify(texts) }],
-        source: { kind: 'plugin', plugin: 'dsh-tui' },
+        source: { kind: 'dsh-tui' },
       })],
       system: TITLE_GENERATION_SYSTEM_PROMPT,
       maxTokens: 64,
@@ -1007,19 +992,21 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
 
     /**
      * Refresh the docked agents-strip roster (see `buildAgentsStripText` in
-     * `TuiApp`) from `ctx.subagents.listChildren`. Best-effort: a transient
-     * failure just leaves the strip as it was — the next `tool/call`/
-     * `tool/result` on this session retries.
+     * `TuiApp`) from `ctx.subagents.listDescendants`, kept to direct
+     * (`depth === 1`) rows — `listChildren` returns bare catalog entries
+     * without the `activity`/`hasChildren` the strip needs. Best-effort: a
+     * transient failure just leaves the strip as it was — the next
+     * `tool/call`/`tool/result` on this session retries.
      *
-     * `listChildren` orders its result oldest-created first; reversed here
+     * Direct rows arrive oldest-created first; reversed here
      * so the strip reads latest-spawned first (a still-running child is
      * ordinarily among the most recent, so this alone surfaces it without
      * pinning it separately).
      */
     const refreshAgentsStrip = (): void => {
       if (subagents === undefined) return
-      void subagents.listChildren(agent.session.id)
-        .then(entries => store.setAgentsStrip(entries.toReversed().map(toSubagentRow)))
+      void subagents.listDescendants(agent.session.id)
+        .then(entries => store.setAgentsStrip(entries.filter(entry => entry.depth === 1).toReversed().map(toSubagentRow)))
         .catch(() => {
           // Best-effort background refresh with no user-facing error surface.
         })

@@ -36,7 +36,7 @@ function callResolver(callId: string, call: { name: string; arguments: string })
 /** A `tool/result` event fixture whose `message.source.callId` correlates back to its `tool/call`. */
 function resultEvent(callId: string, content: unknown[], isError: boolean): SessionEvent {
   return event('tool/result', {
-    message: { source: { kind: 'tool', callId }, content: [{ type: 'tool-result', content, isError }] },
+    message: { source: { kind: 'tool', callId }, content, isError },
   })
 }
 
@@ -75,10 +75,10 @@ describe('formatEvent — user/message', () => {
     expect(line).toBeUndefined()
   })
 
-  it('collapses a plugin-injected notice to a summary line', () => {
+  it('collapses a producer-injected notice to a summary line', () => {
     const line = formatEvent(
       event('user/message', {
-        source: { kind: 'plugin', plugin: 'skill-loader', form: 'notice', summary: 'loaded 3 skills' },
+        source: { kind: 'skill-loader', form: 'notice', summary: 'loaded 3 skills' },
         content: [{ type: 'text', text: 'irrelevant, never shown' }],
       }),
       { replay: false },
@@ -89,10 +89,10 @@ describe('formatEvent — user/message', () => {
     expect(line).not.toContain('irrelevant')
   })
 
-  it('omits the summary for a plugin source with no notice form', () => {
+  it('omits the summary for a producer source with no notice form', () => {
     const line = formatEvent(
       event('user/message', {
-        source: { kind: 'plugin', plugin: 'agents-md', form: 'context' },
+        source: { kind: 'agents-md', form: 'instructions' },
         content: [{ type: 'text', text: 'irrelevant' }],
       }),
       { replay: false },
@@ -297,11 +297,11 @@ describe('formatPendingToolCalls', () => {
 })
 
 describe('formatEvent — tool/result', () => {
-  it('shows an internal harness-level error, independent of the block', () => {
+  it('shows an internal harness-level error, independent of the message', () => {
     const line = formatEvent(
       event('tool/result', {
         error: { code: 'E_TIMEOUT', name: 'ToolTimeoutError' },
-        message: { content: [{ type: 'tool-result', content: [{ type: 'text', text: 'ignored' }], isError: false }] },
+        message: { content: [{ type: 'text', text: 'ignored' }], isError: false },
       }),
       { replay: false },
     )
@@ -310,12 +310,12 @@ describe('formatEvent — tool/result', () => {
     expect(line).not.toContain('ignored')
   })
 
-  it('shows the failure icon when the block reports isError', () => {
+  it('shows the failure icon when the message reports isError', () => {
     const line = formatEvent(
       event('tool/result', {
         message: {
           source: { kind: 'tool', callId: 'call-1' },
-          content: [{ type: 'tool-result', content: [{ type: 'text', text: 'permission denied' }], isError: true }],
+          content: [{ type: 'text', text: 'permission denied' }], isError: true,
         },
       }),
       { replay: false },
@@ -324,12 +324,12 @@ describe('formatEvent — tool/result', () => {
     expect(line).toContain('permission denied')
   })
 
-  it('shows the success icon when the block does not report isError', () => {
+  it('shows the success icon when the message does not report isError', () => {
     const line = formatEvent(
       event('tool/result', {
         message: {
           source: { kind: 'tool', callId: 'call-1' },
-          content: [{ type: 'tool-result', content: [{ type: 'text', text: 'ok' }], isError: false }],
+          content: [{ type: 'text', text: 'ok' }], isError: false,
         },
       }),
       { replay: false },
@@ -343,7 +343,7 @@ describe('formatEvent — tool/result', () => {
       event('tool/result', {
         message: {
           source: { kind: 'tool', callId: 'call-1' },
-          content: [{ type: 'tool-result', content: [], isError: false }],
+          content: [], isError: false,
         },
       }),
       { replay: false },
@@ -359,7 +359,7 @@ describe('formatEvent — tool/result', () => {
         error: { code: 'E_TIMEOUT', name: 'ToolTimeoutError' },
         message: {
           source: { kind: 'tool', callId: 'call-1' },
-          content: [{ type: 'tool-result', content: [], isError: false }],
+          content: [], isError: false,
         },
       }),
       {

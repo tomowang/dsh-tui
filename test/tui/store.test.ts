@@ -38,7 +38,7 @@ function toolResultEvent(seq: number, callId: string): SessionEvent {
     type: 'tool/result',
     seq,
     time: 0,
-    data: { message: { source: { kind: 'tool', callId }, content: [{ type: 'tool-result', content: [], isError: false }] } },
+    data: { message: { source: { kind: 'tool', callId }, content: [], isError: false } },
   } as unknown as SessionEvent
 }
 
@@ -475,7 +475,7 @@ describe('TuiStore overlay state machine', () => {
   it('updateAgentPresets merges a patch onto the open overlay', () => {
     const store = new TuiStore({ events: [] })
     store.openAgentPresets({ current: undefined, blank: true })
-    const rows = [{ id: 'standard', label: 'Standard mode', description: undefined, trust: 'system' as const, broken: undefined }]
+    const rows = [{ id: 'standard', label: 'Standard mode', description: undefined, builtIn: true, broken: undefined }]
 
     store.updateAgentPresets({ rows, busy: false })
 

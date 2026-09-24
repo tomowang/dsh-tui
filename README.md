@@ -38,7 +38,7 @@ An open-source terminal front door for [DeepSeek Harness](https://github.com/dee
 - **Manual compaction** — `/compact` summarizes and compacts session history on demand.
 - **Session rename** — `/rename <title>` sets an explicit title; bare `/rename` generates one from the conversation so far via one on-demand model call, as a kebab-case slug (Claude Code CLI's own convention, e.g. `fix-auth-bug`) rather than the harness's own natural-language default. The accepted title also shows right-aligned in the prompt box's own top border, alongside the terminal window/tab title.
 - **Session resume** — `/resume <sessionId>` switches to a persisted session in a fresh screen (falling back to a brand-new session with a notice on an unknown id); bare `/resume` opens a picker of this working directory's past sessions instead — newest first, each with its folded title where one landed.
-- **Persisted prompt history** — submitted lines are saved across processes and `/clear`, recalled with `↑`/`↓`.
+- **Persisted prompt history** — submitted lines are saved across processes and `/clear` (in `$DSH_HOME/dsh-tui/history.jsonl`, `~/.dsh/…` by default), recalled with `↑`/`↓`.
 - **Readline-style input** — word/line motion, kill/yank-style deletes, multi-line drafts, and shell-like double-press `Ctrl+C`/`Ctrl+D` to exit.
 - **Shell mode** — a leading `!` on an empty prompt (Claude Code's convention) switches Enter to run the line as a local shell command instead of sending it to the agent; the prompt border turns yellow for the duration, and output streams into the transcript without touching the session log.
 - **`@`-file-mention autocomplete** — typing `@` opens a fuzzy-filtered dropdown of repo files (`git ls-files`, or a bounded walk outside a git repo); `Tab`/`Enter` inserts the picked path at the cursor.
@@ -69,7 +69,7 @@ dsh --profile tui --agent-preset <presetId>      # start a fresh session on a gi
 dsh --profile tui --dump-config                  # inspect the composed plugin tree
 ```
 
-Any row `--dump-config` prints — the model adapter, tool set, sandbox policy, this TUI's own config — can be overridden from the profile's `cordis.patch.yml` without touching this package. `--agent-preset` is a `dsh`-launcher flag (parsed by `tui-startup`, not `--dump-config` above) that only applies to a fresh session; it's ignored together with `--resume`, and is a no-op with a startup notice on profiles that don't mount `dsh-agent-presets`. `--resume` with no id opens the same session picker as bare `/resume` below.
+Any row `--dump-config` prints — the model adapter, tool set, sandbox policy, this TUI's own config — can be overridden from the profile's `cordis.patch.yml` without touching this package. `--agent-preset` is a `dsh`-launcher flag (parsed by `tui-startup`, not `--dump-config` above) that only applies to a fresh session; it's ignored together with `--resume`, and is a no-op with a startup notice on profiles that don't mount `dsh-agent-preset-registry`. The bundle ships the same four presets as the Web portal (Standard, PTC, Minimal, Creator), vendored under `presets/`. `--resume` with no id opens the same session picker as bare `/resume` below.
 
 ## Terminal commands
 

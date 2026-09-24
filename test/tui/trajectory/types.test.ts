@@ -30,7 +30,7 @@ describe('detailTabsFor', () => {
   })
 
   it('gives a context record the same shape as user, source included', () => {
-    const tabs = detailTabsFor(record({ kind: 'context', source: { kind: 'plugin', plugin: 'skill-loader' } }))
+    const tabs = detailTabsFor(record({ kind: 'context', source: { kind: 'skill-loader' } }))
     expect(tabs).toEqual(['summary', 'preview', 'raw', 'source'])
   })
 

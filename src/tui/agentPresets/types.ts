@@ -6,14 +6,14 @@
 
 /** One preset row as the overlay renders it. */
 export interface AgentPresetRow {
-  /** Stable identifier; the preset directory's name. */
+  /** Stable identifier; the declaring `@deepseek-ai/dsh-agent-preset` row's `config.id`. */
   readonly id: string
-  /** Display label: a built-in English name for the four shipped ids, else the preset's own name, else its id. */
+  /** Display label: built-in English copy for a shipped preset, else the preset's own name, else its id. */
   readonly label: string
   /** One sentence on what this preset is for, when it published one. */
   readonly description: string | undefined
-  /** `'system'` for a shipped preset, `'user'` for a locally authored one. */
-  readonly trust: 'system' | 'user'
+  /** Whether this is a shipped preset (`isBuiltInPreset`) rather than one a bundle patch declared. */
+  readonly builtIn: boolean
   /** Why this preset cannot compose a session, `undefined` when it can. */
   readonly broken: string | undefined
 }

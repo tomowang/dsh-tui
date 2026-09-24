@@ -1,12 +1,12 @@
 /**
  * Plain, Cordis-agnostic snapshot of one subagent, joined from
- * `ctx.subagents.listChildren()` for the `/agents` overlay. Mirrors the
+ * `ctx.subagents.listDescendants()`'s direct (`depth === 1`) rows for the `/agents` overlay. Mirrors the
  * harness's own `SubagentListEntry` discriminated union directly rather than
  * flattening it, so a `child` row's `mode`/`activity` stay non-optional.
  * @module @tomowang/dsh-tui/tui/agents/types
  */
 
-/** One direct subagent child whose creation descriptor `listChildren` could interpret. */
+/** One direct subagent child whose creation descriptor `listDescendants` could interpret. */
 export interface SubagentChildRow {
   readonly kind: 'child'
   /** Durable child session id, stable across Activations. */
@@ -21,7 +21,7 @@ export interface SubagentChildRow {
   readonly hasChildren: boolean
 }
 
-/** A candidate `listChildren` could not interpret (a damaged or unreadable creation descriptor) — still a row, so its existence isn't silently dropped from the count. */
+/** A candidate `listDescendants` could not interpret (a damaged or unreadable creation descriptor) — still a row, so its existence isn't silently dropped from the count. */
 export interface SubagentDiagnosticRow {
   readonly kind: 'diagnostic'
   readonly id: string
