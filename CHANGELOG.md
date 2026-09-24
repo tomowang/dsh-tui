@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.9.0] - 2026-09-24
+
+### Bug Fixes
+
+- *(tui)* Show model-discovery errors in the models editor
+- *(plugin)* Detect NO_DISCOVERY by error code, not cross-module instanceof
+
+### Chores
+
+- *(deps)* Upgrade @deepseek-ai/dsh-* packages to 0.1.5-rc.2
+- *(deps)* Upgrade @deepseek-ai/dsh-* packages to 0.1.7-rc.2
+
+### Features
+
+- *(tui)* Add explicit model picker to /model overlay
+
 ## [0.8.1] - 2026-09-06
 
 ### Bug Fixes
