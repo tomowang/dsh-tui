@@ -10,6 +10,7 @@ import { Key, matchesKey } from '@earendil-works/pi-tui'
 import type { TuiActions } from '../actions.js'
 import { theme, fg } from '../theme.js'
 import type { ApprovalPromptState } from './types.js'
+import { sanitizeTerminalText } from '../../sanitize.js'
 
 const bold = (s: string): string => `\x1b[1m${s}\x1b[0m`
 const warning = fg(theme.warning)
@@ -35,9 +36,9 @@ export class ApprovalOverlay implements Component {
 
   render(_width: number): string[] {
     const lines: string[] = [bold(warning('Approval requested'))]
-    const idSuffix = this.approval.callId === undefined ? '' : muted(` (${this.approval.callId})`)
-    lines.push(`Tool: ${bold(this.approval.toolName)}${idSuffix}`)
-    if (this.approval.reason !== undefined) lines.push(muted(this.approval.reason))
+    const idSuffix = this.approval.callId === undefined ? '' : muted(` (${sanitizeTerminalText(this.approval.callId)})`)
+    lines.push(`Tool: ${bold(sanitizeTerminalText(this.approval.toolName))}${idSuffix}`)
+    if (this.approval.reason !== undefined) lines.push(muted(sanitizeTerminalText(this.approval.reason)))
     CHOICES.forEach((choice, index) => {
       const color = choice.outcome === 'rejected' ? errorColor : success
       const text = `${index === this.selected ? '› ' : '  '}${choice.label}`

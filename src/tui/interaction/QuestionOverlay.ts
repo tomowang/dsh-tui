@@ -15,6 +15,7 @@ import type { TuiActions } from '../actions.js'
 import { theme, fg } from '../theme.js'
 import { emptyMiniTextField, miniTextFieldInput, renderMiniTextField, type MiniTextFieldState } from '../miniTextField.js'
 import type { QuestionPromptState } from './types.js'
+import { sanitizeTerminalText } from '../../sanitize.js'
 
 const bold = (s: string): string => `\x1b[1m${s}\x1b[0m`
 const secondary = fg(theme.secondary)
@@ -61,23 +62,26 @@ export class QuestionOverlay implements Component {
   }
 
   render(_width: number): string[] {
+    // Model-supplied text: sanitized for display only, since the original
+    // option labels are what `answerQuestion` hands back.
     const { header, question: text, detail, options, multiSelect, approveLabel, progress } = this.question
+    const clean = (s: string): string => sanitizeTerminalText(s)
     const otherIndex = options.length
     const lines: string[] = []
-    lines.push(bold(secondary(`${header ?? 'Question'}${progress === undefined ? '' : ` — ${progress}`}`)))
-    lines.push(text)
+    lines.push(bold(secondary(`${clean(header ?? 'Question')}${progress === undefined ? '' : ` — ${progress}`}`)))
+    lines.push(clean(text))
     if (detail !== undefined) {
       lines.push('')
-      for (const line of capDetailLines(detail)) lines.push(muted(line))
+      for (const line of capDetailLines(clean(detail))) lines.push(muted(line))
       lines.push('')
     }
     options.forEach((option, index) => {
       const isSelected = !this.customMode && this.cursor === index
       const box = multiSelect ? (this.toggled.has(index) ? '[x] ' : '[ ] ') : ''
       const approve = approveLabel === option.label ? ' (approve)' : ''
-      const row = `${isSelected ? '› ' : '  '}${box}${option.label}${approve}`
+      const row = `${isSelected ? '› ' : '  '}${box}${clean(option.label)}${approve}`
       lines.push(isSelected ? invert(row) : row)
-      if (option.description !== undefined) lines.push(muted(`    ${option.description}`))
+      if (option.description !== undefined) lines.push(muted(`    ${clean(option.description)}`))
     })
     if (options.length > 0) {
       const isSelected = !this.customMode && this.cursor === otherIndex

@@ -10,6 +10,7 @@ import type { ToolCallId, ContentBlock, MessageSource } from '@deepseek-ai/dsh-l
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { FileDiff, ToolCallView, ToolDefinition, ToolResult, ToolResultView } from '@deepseek-ai/dsh-tools'
 import { renderMarkdown } from './markdown.js'
+import { sanitizeDeep, sanitizeTerminalText } from './sanitize.js'
 import { theme, fg } from './tui/theme.js'
 
 /** Rendering context: replay walks history already in the log. */
@@ -40,20 +41,20 @@ export function truncate(text: string, max: number): string {
   return oneLine.length <= max ? oneLine : `${oneLine.slice(0, max - 1)}…`
 }
 
-/** Join the text blocks of a message content array. */
+/** Join the text blocks of a message content array, with terminal control sequences stripped (see `sanitize.ts`). */
 export function textOf(content: readonly ContentBlock[]): string {
-  return content
+  return sanitizeTerminalText(content
     .filter(block => block.type === 'text')
     .map(block => block.text)
-    .join('')
+    .join(''))
 }
 
 /** Join the reasoning/thinking blocks of a message content array, distinct from its visible `textOf`. */
 export function reasoningOf(content: readonly ContentBlock[]): string {
-  return content
+  return sanitizeTerminalText(content
     .filter(block => block.type === 'reasoning')
     .map(block => block.text)
-    .join('')
+    .join(''))
 }
 
 /** Preview length for a settled step's reasoning summary line — long enough to be useful, short enough that a long thinking block never floods the transcript; the full text is always in `/trajectory`. */
@@ -86,13 +87,17 @@ export function formatSettledMessage(text: string, reasoningText: string): strin
 export function formatStreamingText(text: string, reasoningText = '', spinnerChar = '✦'): string | undefined {
   if (text === '' && reasoningText === '') return undefined
   if (text === '') return `\n${violet(`${spinnerChar} thinking`)}\n`
-  return `\n${renderMarkdown(text)}\n`
+  // Sanitized over the whole accumulated text on every render, so an escape
+  // split across two stream deltas can't slip through either half.
+  return `\n${renderMarkdown(sanitizeTerminalText(text))}\n`
 }
 
 /** One local shell-escape run's header + output lines, shared by the settled and in-flight renderers below. `exitCode` is `null` while still running. */
 function formatShellLines(command: string, output: string, exitCode: number | null): string[] {
-  const lines = [`${yellow('!')} ${command}`]
-  if (output !== '') lines.push(...splitLines(output).map(dim))
+  const lines = [`${yellow('!')} ${sanitizeTerminalText(command)}`]
+  // Sanitized over the accumulated output, not per chunk, so a sequence split
+  // across two reads is still recognized; SGR colors survive.
+  if (output !== '') lines.push(...splitLines(sanitizeTerminalText(output, { terminalOutput: true })).map(dim))
   if (exitCode !== null) lines.push(exitCode === 0 ? dim(`[exit ${exitCode}]`) : red(`[exit ${exitCode}]`))
   return lines
 }
@@ -183,7 +188,10 @@ function presentCallSafely(name: string, rawArgs: string, getTool: RenderOptions
   const parsed = parseJson(rawArgs)
   if (!parsed.valid) return undefined
   try {
-    return tool.presentCall(parsed.value)
+    // A presenter may read beyond the (already sanitized) event, e.g. a
+    // file's current contents for a diff, so its view is sanitized too.
+    const view = tool.presentCall(parsed.value)
+    return view === undefined ? undefined : sanitizeDeep(view)
   } catch {
     return undefined
   }
@@ -258,7 +266,7 @@ function presentResultSafely(
   if (!parsed.valid) return undefined
   try {
     const view = tool.presentResult(parsed.value, result)
-    return view === undefined ? undefined : { name: call.name, view }
+    return view === undefined ? undefined : { name: call.name, view: sanitizeDeep(view) }
   } catch {
     return undefined
   }

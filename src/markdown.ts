@@ -8,6 +8,7 @@
  * @module @tomowang/dsh-tui/markdown
  */
 
+import { safeHyperlinkUrl } from './sanitize.js'
 import { theme, fg } from './tui/theme.js'
 
 const ESC = '\x1b['
@@ -20,9 +21,10 @@ const italic = (s: string): string => `${ESC}3m${s}${ESC}0m`
 const strike = (s: string): string => `${ESC}9m${s}${ESC}0m`
 const underline = (s: string): string => `${ESC}4m${s}${ESC}0m`
 
-/** Wrap `label` as an OSC 8 terminal hyperlink to `url`; terminals without OSC 8 support just print `label` and ignore the surrounding escapes. */
+/** Wrap `label` as an OSC 8 terminal hyperlink to `url`; terminals without OSC 8 support just print `label` and ignore the surrounding escapes. A URL that isn't http/https/mailto, or carries control bytes, gets the bare label instead. */
 function hyperlink(url: string, label: string): string {
-  return `\x1b]8;;${url}\x1b\\${label}\x1b]8;;\x1b\\`
+  const safe = safeHyperlinkUrl(url)
+  return safe === undefined ? label : `\x1b]8;;${safe}\x1b\\${label}\x1b]8;;\x1b\\`
 }
 
 const FENCE_RE = /^(\s*)(`{3,}|~{3,})\s*(\S*)\s*$/

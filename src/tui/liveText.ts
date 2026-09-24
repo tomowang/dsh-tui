@@ -17,6 +17,7 @@ import { stripSessionIdPrefix } from '../sessionId.js'
 import type { PermissionState } from './store.js'
 import type { SubagentRow } from './agents/types.js'
 import { theme, fg } from './theme.js'
+import { sanitizeTitle } from '../sanitize.js'
 
 const dim = fg(theme.muted)
 const success = fg(theme.success)
@@ -183,7 +184,7 @@ export function buildAgentsStripText(rows: readonly SubagentRow[], viewingChildI
   const segments = [
     segment(undefined, 'main', false),
     ...(start > 0 ? [dim(`‹${start}`)] : []),
-    ...children.slice(start, end).map(child => segment(child.id, truncate(child.label, AGENTS_STRIP_LABEL_LIMIT), child.activity === 'running')),
+    ...children.slice(start, end).map(child => segment(child.id, truncate(sanitizeTitle(child.label), AGENTS_STRIP_LABEL_LIMIT), child.activity === 'running')),
     ...(end < children.length ? [dim(`${children.length - end}›`)] : []),
   ]
   return `${segments.join('  ')}${dim('  (←/→ to switch, when prompt is empty)')}`
@@ -227,7 +228,10 @@ const GOAL_OBJECTIVE_LIMIT = 80
  * displayed verbatim by the terminal chrome, not interpreted as SGR.
  */
 export function buildTerminalTitle(title: string | null | undefined): string {
-  return title === null || title === undefined ? 'dsh-tui' : `${title} — dsh-tui`
+  // Sanitized again here even though `TuiStore.setTitle` already does: this
+  // string lands inside an OSC 0, where a stray BEL would end the sequence early.
+  const clean = title === null || title === undefined ? '' : sanitizeTitle(title)
+  return clean === '' ? 'dsh-tui' : `${clean} — dsh-tui`
 }
 
 export function buildGoalBarText(goal: GoalProjection | null | undefined): string {

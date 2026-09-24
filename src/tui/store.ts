@@ -21,6 +21,7 @@ import type { SubagentRow } from './agents/types.js'
 import type { SessionResumeRow } from './resume/types.js'
 import type { ApprovalPromptState, QuestionPromptState } from './interaction/types.js'
 import { reasoningOf, textOf } from '../render.js'
+import { sanitizeDeep, sanitizeTerminalText, sanitizeTitle } from '../sanitize.js'
 
 /** Which pane of the `/model` overlay is showing. */
 export type ModelProfileView = 'list' | 'form' | 'picker'
@@ -271,9 +272,10 @@ export class TuiStore {
   private readonly pendingToolCallsMap = new Map<ToolCallId, { name: string; arguments: string }>()
 
   constructor(initial: { events: readonly SessionEvent[] }) {
-    const lastSeq = initial.events.at(-1)?.seq ?? 0
+    const events = initial.events.map(event => sanitizeDeep(event))
+    const lastSeq = events.at(-1)?.seq ?? 0
     this.lastSeq = lastSeq
-    for (const event of initial.events) {
+    for (const event of events) {
       if (event.type === 'tool/call') {
         const call = { name: event.data.name, arguments: event.data.arguments }
         this.toolCalls.set(event.data.callId, call)
@@ -283,7 +285,7 @@ export class TuiStore {
       }
     }
     this.state = {
-      events: initial.events,
+      events,
       replayThrough: lastSeq,
       status: 'idle',
       queued: [],
@@ -316,8 +318,9 @@ export class TuiStore {
   }
 
   /** Append one live session event, ignoring anything already seeded/seen. */
-  appendEvent(event: SessionEvent): void {
-    if (event.seq <= this.lastSeq) return
+  appendEvent(rawEvent: SessionEvent): void {
+    if (rawEvent.seq <= this.lastSeq) return
+    const event = sanitizeDeep(rawEvent)
     this.lastSeq = event.seq
     if (event.type === 'tool/call') {
       const call = { name: event.data.name, arguments: event.data.arguments }
@@ -389,7 +392,7 @@ export class TuiStore {
   }
 
   setNotice(notice: string | undefined): void {
-    this.set({ notice })
+    this.set({ notice: notice === undefined ? undefined : sanitizeTerminalText(notice) })
   }
 
   setPermission(permission: PermissionState | undefined): void {
@@ -398,12 +401,12 @@ export class TuiStore {
 
   /** Refresh the session's current goal from the 'goal' session projection; `undefined` when the projection unit isn't composed, `null` before the first create or after a clear. */
   setGoal(goal: GoalProjection | null | undefined): void {
-    this.set({ goal })
+    this.set({ goal: sanitizeDeep(goal) })
   }
 
   /** Refresh the session's current title from the 'title' session projection; `undefined` when `dsh-session-title` isn't composed, `null` before the first accepted title. */
   setTitle(title: string | null | undefined): void {
-    this.set({ title })
+    this.set({ title: typeof title === 'string' ? sanitizeTitle(title) : title })
   }
 
   setStats(stats: StatsSnapshot): void {
@@ -541,7 +544,8 @@ export class TuiStore {
   /** Patch the viewed child's sub-state; a no-op once viewing has stopped. */
   updateViewingChild(patch: Partial<ViewingChildState>): void {
     if (this.state.viewingChild === undefined) return
-    this.set({ viewingChild: { ...this.state.viewingChild, ...patch } })
+    const clean = patch.events === undefined ? patch : { ...patch, events: patch.events.map(event => sanitizeDeep(event)) }
+    this.set({ viewingChild: { ...this.state.viewingChild, ...clean } })
   }
 
   /** Append one further live event to the viewed child's transcript; a no-op once viewing has moved on (stopped, or switched to a different child). */

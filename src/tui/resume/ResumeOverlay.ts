@@ -13,6 +13,7 @@ import type { TuiActions } from '../actions.js'
 import type { TuiStore } from '../store.js'
 import { theme, fg } from '../theme.js'
 import { formatAge } from './format.js'
+import { sanitizeTitle } from '../../sanitize.js'
 
 const bold = (s: string): string => `\x1b[1m${s}\x1b[0m`
 const secondary = fg(theme.secondary)
@@ -37,7 +38,7 @@ export class ResumeOverlay implements Component {
     if (error !== undefined) lines.push(errorColor(error))
     if (busy && rows.length === 0) lines.push(muted('Loading…'))
     rows.forEach((row, index) => {
-      const label = row.title ?? muted(`${row.id} (untitled)`)
+      const label = row.title === undefined ? muted(`${row.id} (untitled)`) : sanitizeTitle(row.title)
       const age = muted(formatAge(row.createdAt, now))
       const row0 = `${index === selected ? '› ' : '  '}${label}  ${age}`
       lines.push(index === selected ? invert(row0) : row0)
