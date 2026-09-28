@@ -1,6 +1,6 @@
 # Agent preset cordis: one `@deepseek-ai/dsh-agent-preset` declaration inserted
 # after the TUI patch. Vendored verbatim (below this header) from
-# `@deepseek-ai/dsh-web-app`'s `presets/cordis.patch.yml` at 0.1.7-rc.2: bundle
+# `@deepseek-ai/dsh-web-app`'s `presets/cordis.patch.yml` at 0.2.0-rc.1: bundle
 # patch paths are package-relative, so the TUI cannot reference that file
 # in place. Re-sync it on every harness upgrade.
 - insert:
