@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.10.0] - 2026-10-17
+
+### Bug Fixes
+
+- *(tui)* Strip terminal control sequences from untrusted text
+
+### Chores
+
+- *(deps)* Upgrade @deepseek-ai/dsh-* packages to 0.2.0-rc.1
+- *(deps)* Upgrade @deepseek-ai/dsh-* packages to 0.2.1-rc.2
+
 ## [0.9.0] - 2026-09-24
 
 ### Bug Fixes
