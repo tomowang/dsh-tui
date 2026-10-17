@@ -13,8 +13,8 @@ export interface SubagentChildRow {
   readonly id: string
   /** Display label: the child's own creation label, else its session id. */
   readonly label: string
-  /** `'one-shot'` (terminal, `subagent_fork`) or `'continuable'` (resumable, `subagent`). */
-  readonly mode: 'one-shot' | 'continuable'
+  /** `'one-shot'` (terminal, `subagent_fork`), `'continuable'` (resumable, `subagent`), or `'external'` (a provider-managed child, e.g. Codex/Claude Code). */
+  readonly mode: 'one-shot' | 'continuable' | 'external'
   /** `'running'` means the child is live in `ctx.sessions`; `'inactive'` means it exists only in persistence. */
   readonly activity: 'running' | 'inactive'
   /** Whether a direct descendant of this child is itself a subagent. */

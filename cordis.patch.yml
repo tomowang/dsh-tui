@@ -7,7 +7,6 @@
 - id: system-prompt
   config:
     personaPrefix: You are a coding agent powered by the {{model}} model.
-    personaSuffix: Your working directory is {{cwd}}.
 
 # Module-reload HMR redraws would fight the interactive terminal; the
 # launcher's watch-only fallback still keeps the user patch layers live.
@@ -136,12 +135,6 @@
   disabled: true
 
 - id: tool-workflow
-  disabled: true
-
-# `base` ships this row disabled; the preset-plane gate reads declared row ids
-# without regard to `disabled`, so this row must stay to keep `tool-ralph` off
-# the host plane and out of collision with every preset's row.
-- id: tool-ralph
   disabled: true
 
 - id: agent-instructions

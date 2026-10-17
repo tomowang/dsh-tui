@@ -175,7 +175,7 @@ function toSubagentRow(entry: SubagentListEntry): SubagentRow {
   return {
     kind: 'child',
     id: entry.id,
-    label: entry.mode === 'one-shot' ? entry.label ?? entry.id : entry.label,
+    label: entry.label ?? entry.id,
     mode: entry.mode,
     activity: entry.activity,
     hasChildren: entry.hasChildren,
@@ -1026,11 +1026,13 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
         if (event.type === 'agent-preset/selected') {
           store.setPreset(currentPresetState(agent))
         }
-        // A subagent child is created and finished via this session's own
-        // tool/call+tool/result pair (spawning is a tool call) — the
-        // harness exposes no dedicated child-lifecycle event to subscribe
-        // to instead.
-        if (event.type === 'tool/call' || event.type === 'tool/result') {
+        // A subagent child is created via this session's own
+        // tool/call+tool/result pair (spawning is a tool call, which returns
+        // the child id immediately) and announces that it finished with a
+        // `subagent-settled` notice in this session's inbox — the harness
+        // exposes no dedicated child-lifecycle event to subscribe to instead.
+        if (event.type === 'tool/call' || event.type === 'tool/result'
+          || (event.type === 'user/message' && event.data.source.kind === 'subagent-settled')) {
           refreshAgentsStrip()
         }
       }),
