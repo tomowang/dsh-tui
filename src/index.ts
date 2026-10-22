@@ -934,9 +934,11 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
     const agentOptions = { provider: selection.provider, model: selection.model }
 
     // Only a fresh session adopts `config.agentPreset`/the deployment default —
-    // a resumed session's preset is whatever its persisted header (or a later
+    // a resumed session keeps whatever its persisted header (or a later
     // `agent-preset/selected` event) already recorded, exactly like `--resume`
-    // already ignores model-selection flags in favor of the persisted state.
+    // already ignores model-selection flags in favor of the persisted state. It
+    // still has to JOIN that preset in `setup`, though: with presets mounted,
+    // the preset owns every model-facing tool (see `setup` below).
     let resolvedPreset: AgentPreset | undefined
     let presetNotice: string | undefined
     if (resumeId === undefined) {
@@ -952,10 +954,26 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
       }
     }
 
-    const setup = async (agentCtx: Context): Promise<void> => {
+    const setup = async (agentCtx: Context, agent: Agent): Promise<void> => {
       const selected: ModelSelectionRef = { current: selection, assembled: undefined }
       installModelSelection(agentCtx, selected)
-      if (presets !== undefined && resolvedPreset !== undefined) await presets.mount(agentCtx, resolvedPreset.id)
+      if (presets === undefined) return
+      // A fresh session joins the preset resolved above (the config flag or the
+      // deployment default). A resumed one joins the preset its own log records —
+      // the `agentPreset` projection, so a later `/presets` switch counts, and
+      // not this launch's `--agent-preset`. Joining it is what gives the agent
+      // its tools: `cordis.patch.yml` disables dsh-base's host-plane copies, so
+      // the preset is the only thing that supplies them.
+      const presetId = resumeId === undefined
+        ? resolvedPreset?.id
+        : projectionValues(agent.session)?.agentPreset ?? undefined
+      if (resumeId === undefined && presetId === undefined) return
+      try {
+        await presets.mount(agentCtx, presetId)
+      } catch (error) {
+        const named = presetId === undefined ? '' : `"${presetId}" `
+        presetNotice = `agent preset ${named}could not be joined: ${error instanceof Error ? error.message : String(error)}`
+      }
     }
     // dsh-agent's own doc calls `dispose` a portable CAPABILITY meant to be
     // handed to another owner (exactly what happens below, into
