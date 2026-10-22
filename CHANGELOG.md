@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.10.1] - 2026-10-22
+
+### Bug Fixes
+
+- *(plugin)* Join a resumed session's preset so it keeps its tools (#9)
+
 ## [0.10.0] - 2026-10-17
 
 ### Bug Fixes
