@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.10.2] - 2026-10-25
+
+### Chores
+
+- *(deps)* Upgrade @deepseek-ai/dsh-* packages to 0.2.1-rc.3
+
 ## [0.10.1] - 2026-10-22
 
 ### Bug Fixes
