@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.10.3] - 2026-11-17
+
+### Bug Fixes
+
+- *(plugin)* Align with DSH 0.2.2-rc.3
+
 ## [0.10.2] - 2026-10-25
 
 ### Chores
