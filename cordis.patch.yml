@@ -44,16 +44,16 @@
       config:
         default: standard
 
-    # Host-owned opt-in the shipped presets' `tool-subagent` rows require:
-    # the standard/ptc/cordis presets set `modelSelectionSettings: true` on
-    # their delegation tool, which throws at preset-mount time ("requires
-    # @deepseek-ai/dsh-tool-subagent/model-selection-settings in the Host
-    # scope") without this row composed somewhere above them. dsh-base's own
-    # host-plane `tool-subagent` doesn't request the flag, so dsh-base never
-    # needed this; mirrors dsh-web-app's bundle, which mounts the same row for
-    # the same reason.
+    # Host-owned authorization sampled at Agent creation. Preset delegation
+    # tools use modelSelection/modelDiscovery; this setting controls whether
+    # fresh sessions may use them with an explicit list of allowed routes.
     - id: subagent-model-selection-settings
       name: '@deepseek-ai/dsh-tool-subagent/model-selection-settings'
+
+    # Standard/PTC presets now declare tool-office, whose shared service is
+    # normally supplied by dsh-web-app rather than dsh-base.
+    - id: office-kit
+      name: '@deepseek-ai/dsh-office-kit'
 
     # The Creator (`cordis`) preset's `tool-cordis` row reads the
     # `cordisInspect` registry this runner provides; dsh-base doesn't mount
@@ -120,9 +120,6 @@
   disabled: true
 
 - id: tool-subagent-control
-  disabled: true
-
-- id: tool-subagent-list-agents
   disabled: true
 
 - id: tool-subagent

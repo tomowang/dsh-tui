@@ -1,3 +1,9 @@
+allowBuilds:
+  '@deepseek-ai/dsh-subprocess-local': true
+  '@google/genai': false
+  koffi: true
+  node-pty: true
+  protobufjs: false
 minimumReleaseAgeExclude:
   - '@deepseek-ai/cordis-plugin-loader@1.0.3 || 1.0.6'
   - '@deepseek-ai/cordis@4.0.2'

@@ -18,7 +18,7 @@ import { homedir } from 'node:os'
 import { FiberState, type Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
-import type { Agent, ModelSelectionRef } from '@deepseek-ai/dsh-agent'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
 // Type-only: carries the `agent-preset/selected` SessionEventMap augmentation
 // (declared in the module's own session.ts) alongside AgentPreset.
@@ -89,6 +89,13 @@ declare module '@deepseek-ai/dsh-llm' {
   interface MessageSourceMap {
     /** The on-demand `/rename` title-generation request (`generateSessionTitle`); producers own their kind, there is no shared `plugin` kind. */
     'dsh-tui': { kind: 'dsh-tui' } & ContextFormed
+  }
+}
+
+declare module '@deepseek-ai/dsh-llm/types' {
+  interface LlmRequestPurposeMap {
+    /** On-demand TUI session-title generation. */
+    'dsh-tui-title': true
   }
 }
 
@@ -175,7 +182,7 @@ function toSubagentRow(entry: SubagentListEntry): SubagentRow {
   return {
     kind: 'child',
     id: entry.id,
-    label: entry.label ?? entry.id,
+    label: ('name' in entry ? entry.name : undefined) ?? entry.label ?? entry.id,
     mode: entry.mode,
     activity: entry.activity,
     hasChildren: entry.hasChildren,
@@ -373,13 +380,11 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
 
   /**
    * One shared projection cut's raw values, or `undefined` without a mounted
-   * registry/unit. `snapshot()` schema-validates every registered key on
-   * each call, so callers needing more than one key (e.g. the initial store
-   * seed below) must fetch this once and derive both from it rather than
-   * calling `statsSnapshot`/`goalSnapshot` separately.
+   * registry/unit. Request only the TUI's projection keys; an unfiltered
+   * snapshot computes every wire unit, including unrelated plugin state.
    */
   function projectionValues(session: Session): Partial<SessionProjectionMap> | undefined {
-    return sessionProjections?.snapshot(session).values
+    return sessionProjections?.snapshot(session, ['sessionStats', 'tokenUsage', 'contextPressure', 'contextBreakdown', 'goal', 'title', 'agentPreset']).values
   }
 
   /** The session's current stats-line figures, or empty sides without a mounted registry/unit. */
@@ -912,7 +917,7 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
       system: TITLE_GENERATION_SYSTEM_PROMPT,
       maxTokens: 64,
       sessionId: session.id,
-      purpose: 'session-title',
+      purpose: 'dsh-tui-title',
       // A reasoning model given a small maxTokens can spend the entire
       // budget thinking and never reach visible text (verified live against
       // this deployment's own model, which does exactly that at even 1024
@@ -931,7 +936,7 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
   /** Create (or resume) one Agent, wire its listeners to a fresh store, and mount a fresh Ink tree. */
   async function attachSession(resumeId: string | undefined): Promise<CurrentSession> {
     const selection = defaultModel.currentSelection()
-    const agentOptions = { provider: selection.provider, model: selection.model }
+    const agentOptions = { ...selection }
 
     // Only a fresh session adopts `config.agentPreset`/the deployment default —
     // a resumed session keeps whatever its persisted header (or a later
@@ -955,8 +960,7 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
     }
 
     const setup = async (agentCtx: Context, agent: Agent): Promise<void> => {
-      const selected: ModelSelectionRef = { current: selection, assembled: undefined }
-      installModelSelection(agentCtx, selected)
+      installModelSelection(agentCtx)
       if (presets === undefined) return
       // A fresh session joins the preset resolved above (the config flag or the
       // deployment default). A resumed one joins the preset its own log records —
@@ -993,6 +997,7 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
           setup,
         })
     await agent.whenIdle()
+    const activeSelection = agent.model.current() ?? selection
 
     // Seed the store from persisted history, then follow the same log live; the
     // store's seq boundary keeps one rendering pass per event across replay and
@@ -1247,7 +1252,7 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
         // generateSessionTitle's own doc for why this isn't a registered
         // automatic provider.
         store.setNotice('Generating a title from the conversation so far…')
-        void generateSessionTitle(agent.session, agentOptions)
+        void generateSessionTitle(agent.session, agent.model.current() ?? activeSelection)
           .then(generated => {
             if (generated === undefined) {
               store.setNotice('rename failed: no eligible messages to summarize yet')
@@ -1589,8 +1594,8 @@ async function run(ctx: Context, config: Config, io: TuiIo, mounted: { instance?
       store,
       actions,
       sessionId: String(agent.session.id),
-      provider: selection.provider,
-      model: selection.model,
+      provider: activeSelection.provider,
+      model: activeSelection.model,
       version: readPackageVersion(),
       cwd: abbreviateHome(process.cwd()),
       promptHistory,

@@ -1,6 +1,6 @@
 # Agent preset ptc: one `@deepseek-ai/dsh-agent-preset` declaration inserted
 # after the TUI patch. Vendored verbatim (below this header) from
-# `@deepseek-ai/dsh-web-app`'s `presets/ptc.patch.yml` at 0.2.1-rc.3: bundle
+# `@deepseek-ai/dsh-web-app`'s `presets/ptc.patch.yml` at 0.2.2-rc.3: bundle
 # patch paths are package-relative, so the TUI cannot reference that file
 # in place. Re-sync it on every harness upgrade.
 - insert:
@@ -28,6 +28,9 @@
             disabled: !!js process.platform !== 'win32'
           - id: tool-fs
             name: '@deepseek-ai/dsh-tool-fs'
+            config:
+              # Set true to add the apply_patch tool beside edit.
+              applyPatch: false
           - id: tool-fs-search
             name: '@deepseek-ai/dsh-tool-fs-search'
             config:
@@ -90,14 +93,15 @@
             config:
               - id: tool-subagent-control
                 name: '@deepseek-ai/dsh-tool-subagent-control'
-              - id: tool-subagent-list-agents
-                name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
+                config:
+                  interrupt: false
               - id: tool-subagent
                 name: '@deepseek-ai/dsh-tool-subagent'
                 config:
                   provider: spawn
                   toolName: subagent
-                  modelSelectionSettings: true
+                  modelSelection: true
+                  modelDiscovery: true
               - id: tool-subagent-fork
                 name: '@deepseek-ai/dsh-tool-subagent'
                 config:
@@ -122,12 +126,12 @@
             config:
               fetch: true
               searchTimeoutMs: 60000
-          - id: tool-presentation
-            name: '@deepseek-ai/dsh-agent-tool-presentation'
-            config:
-              mode: ptc
+          - id: tool-executor-ptc
+            name: '@deepseek-ai/dsh-tool-executor-ptc'
           - id: present
             name: '@deepseek-ai/dsh-tool-present'
+          - id: tool-office
+            name: '@deepseek-ai/dsh-tool-office'
           - id: tool-plugin-manager
             name: '@deepseek-ai/dsh-plugin-manager/tools'
             disabled: true
