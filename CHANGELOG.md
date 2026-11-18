@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.10.4] - 2026-11-18
+
+### Bug Fixes
+
+- *(deps)* Upgrade @deepseek-ai/dsh-* to 0.2.2-rc.5 and widen dsh compatibility to ^0.2.2-rc.1
+
 ## [0.10.3] - 2026-11-17
 
 ### Bug Fixes
