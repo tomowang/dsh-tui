@@ -34,6 +34,15 @@ describe('published DSH base bundle compatibility', () => {
     expect(composed.find(row => row.id === 'tool-agent-team')?.disabled).not.toBe(true)
   })
 
+  it('declares a SemVer range rather than pinning an exact DSH runtime version', () => {
+    expect(manifest.engines?.dsh).toBe('^0.2.2-rc.1')
+    for (const [pkg, range] of Object.entries(manifest.peerDependencies as Record<string, string>)) {
+      if (pkg.startsWith('@deepseek-ai/dsh-')) {
+        expect(range, pkg).toBe('^0.2.2-rc.1')
+      }
+    }
+  })
+
   it.each(presets)('resolves active plugin entry points for $id', async preset => {
     const rows = allRows(preset.config.plugins as EntryOptions[])
     for (const row of rows) {

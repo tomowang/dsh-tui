@@ -49,7 +49,7 @@ An open-source terminal front door for [DeepSeek Harness](https://github.com/dee
 
 ## Install
 
-Targets [DeepSeek Harness `0.2.2-rc.3`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.2-rc.3). Requires Node `>=24.9.0` and a `DEEPSEEK_API_KEY`.
+Targets [DeepSeek Harness `0.2.2-rc.5`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.2-rc.5) (compatible with `^0.2.2-rc.1`). Requires Node `>=24.9.0` and a `DEEPSEEK_API_KEY`.
 
 ```sh
 # 1. Install the dsh launcher
@@ -69,7 +69,7 @@ dsh --profile tui --agent-preset <presetId>      # start a fresh session on a gi
 dsh --profile tui --dump-config                  # inspect the composed plugin tree
 ```
 
-Any row `--dump-config` prints — the model adapter, tool set, sandbox policy, this TUI's own config — can be overridden from the profile's `cordis.patch.yml` without touching this package. `--agent-preset` is a `dsh`-launcher flag (parsed by `tui-startup`, not `--dump-config` above) that only applies to a fresh session; it's ignored together with `--resume`, and is a no-op with a startup notice on profiles that don't mount `dsh-agent-preset-registry`. The bundle ships the same four presets as the `0.2.2-rc.3` Web portal (Standard, PTC, Minimal, Creator), vendored under `presets/`. PTC uses the dedicated tool executor; Standard and PTC include the upstream Office tools backed by the shared Office kit service. `--resume` with no id opens the same session picker as bare `/resume` below.
+Any row `--dump-config` prints — the model adapter, tool set, sandbox policy, this TUI's own config — can be overridden from the profile's `cordis.patch.yml` without touching this package. `--agent-preset` is a `dsh`-launcher flag (parsed by `tui-startup`, not `--dump-config` above) that only applies to a fresh session; it's ignored together with `--resume`, and is a no-op with a startup notice on profiles that don't mount `dsh-agent-preset-registry`. The bundle ships the same four presets as the `0.2.2-rc.5` Web portal (Standard, PTC, Minimal, Creator), vendored under `presets/`. PTC uses the dedicated tool executor; Standard and PTC include the upstream Office tools backed by the shared Office kit service. `--resume` with no id opens the same session picker as bare `/resume` below.
 
 ## Terminal commands
 
