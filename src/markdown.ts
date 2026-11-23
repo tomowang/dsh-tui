@@ -127,6 +127,56 @@ function parseTableSeparator(line: string): TableAlign[] | null {
 // eslint-disable-next-line no-control-regex -- matching the ANSI escapes this module's own styling helpers emit requires their literal control bytes.
 const ANSI_RE = /\x1b\][^\x07]*\x07|\x1b\][^\x1b]*\x1b\\|\x1b\[[0-9;]*m/g
 
+const MARK_RE = /\p{Mn}|\p{Me}/u
+const EMOJI_PRESENTATION_RE = /\p{Emoji_Presentation}/u
+
+/** East Asian wide/fullwidth code points: CJK, Hangul, kana, fullwidth forms. */
+function isWideCodePoint(cp: number): boolean {
+  return (
+    (cp >= 0x1100 && cp <= 0x115f) ||
+    (cp >= 0x2329 && cp <= 0x232a) ||
+    (cp >= 0x2e80 && cp <= 0x303e) ||
+    (cp >= 0x3041 && cp <= 0x33ff) ||
+    (cp >= 0x3400 && cp <= 0x4dbf) ||
+    (cp >= 0x4e00 && cp <= 0x9fff) ||
+    (cp >= 0xa000 && cp <= 0xa4cf) ||
+    (cp >= 0xa960 && cp <= 0xa97f) ||
+    (cp >= 0xac00 && cp <= 0xd7a3) ||
+    (cp >= 0xf900 && cp <= 0xfaff) ||
+    (cp >= 0xfe10 && cp <= 0xfe19) ||
+    (cp >= 0xfe30 && cp <= 0xfe6f) ||
+    (cp >= 0xff00 && cp <= 0xff60) ||
+    (cp >= 0xffe0 && cp <= 0xffe6) ||
+    (cp >= 0x16fe0 && cp <= 0x18cff) ||
+    (cp >= 0x1b000 && cp <= 0x1b2ff) ||
+    (cp >= 0x20000 && cp <= 0x3fffd)
+  )
+}
+
+/**
+ * Terminal cell width of one code point: zero for controls, combining marks
+ * and zero-width characters, two for wide characters and emoji, one otherwise.
+ * `nextCp` is the code point that follows, so a variation selector 16 can
+ * widen its base character to the emoji presentation the terminal renders.
+ */
+function charWidth(cp: number, nextCp: number | undefined): number {
+  if (cp < 32 || (cp >= 0x7f && cp < 0xa0)) return 0
+  if (cp === 0x00ad || cp === 0x200b || cp === 0x200c || cp === 0x200d || cp === 0x2060 || cp === 0xfeff) return 0
+  if (cp >= 0xfe00 && cp <= 0xfe0f) return 0
+  const char = String.fromCodePoint(cp)
+  if (MARK_RE.test(char)) return 0
+  if (nextCp === 0xfe0f) return 2
+  return isWideCodePoint(cp) || EMOJI_PRESENTATION_RE.test(char) ? 2 : 1
+}
+
+/** Display width of escape-free text, in terminal cells. */
+function displayWidth(text: string): number {
+  const codePoints = Array.from(text, char => char.codePointAt(0) ?? 0)
+  let width = 0
+  for (let i = 0; i < codePoints.length; i++) width += charWidth(codePoints[i], codePoints[i + 1])
+  return width
+}
+
 /**
  * Visible length of an already-styled cell: ANSI escapes have string length
  * but no on-screen width, so measuring `styled.length` directly would
@@ -136,13 +186,14 @@ const ANSI_RE = /\x1b\][^\x07]*\x07|\x1b\][^\x1b]*\x1b\\|\x1b\[[0-9;]*m/g
  * `**bold**`'s raw text is 4 characters longer than what it renders as, so
  * a column sized from raw source overcounts a bold cell's true width, and
  * that same bold cell then looks "wide enough" and gets under-padded
- * relative to its plain siblings. Like the rest of this module, "visible"
- * means UTF-16 code units after stripping escapes, not a true display-width
- * count, so a wide/astral cell (CJK, emoji) can still under-pad — a known
- * limitation shared with the fixed-width horizontal rule below.
+ * relative to its plain siblings. Width is measured in terminal cells, not
+ * UTF-16 code units: CJK text and emoji occupy two cells per code point and
+ * combining marks occupy none, so a table stays aligned when its cells mix
+ * scripts. Treating the cell's length as its width would make every column
+ * with a wide character too narrow.
  */
 function visibleLength(styled: string): number {
-  return styled.replace(ANSI_RE, '').length
+  return displayWidth(styled.replace(ANSI_RE, ''))
 }
 
 /** Pad an already-styled cell out to `width`, measuring by `visibleLength` rather than `styled.length`. */
