@@ -198,6 +198,38 @@ describe('renderMarkdown', () => {
     expect(lines).toEqual(['Note', '────', 'abc ', 'xyz '])
   })
 
+  // Terminal cell width for the scripts used below: CJK ideographs and
+  // emoji-presentation characters occupy two cells, everything else one.
+  // Deliberately independent of the renderer's own width ranges.
+  const cellWidth = (s: string): number => {
+    let width = 0
+    for (const char of s) {
+      const cp = char.codePointAt(0) ?? 0
+      width += (cp >= 0x2e80 && cp <= 0x9fff) || /\p{Emoji_Presentation}/u.test(char) ? 2 : 1
+    }
+    return width
+  }
+
+  it('sizes columns by terminal cell width when cells contain CJK text', () => {
+    const out = renderMarkdown(
+      ['| 颜色 | 数法 |', '|---|---|', '| 白白 | 从 4 个白球里选 2 个 |', '| 一白一黑 | 1 个白 × 1 个黑 |'].join('\n'),
+    )
+    const lines = stripAnsi(out).split('\n')
+    // Every row pads to the same total width, so the row's closing '│' lands
+    // on the same terminal cell even though the rows' UTF-16 lengths differ.
+    expect(new Set(lines.map(cellWidth)).size).toBe(1)
+    const barOffset = (line: string): number => cellWidth(line.slice(0, line.indexOf('│')))
+    expect(new Set(lines.filter(line => line.includes('│')).map(barOffset)).size).toBe(1)
+  })
+
+  it('sizes columns by terminal cell width when cells contain emoji', () => {
+    const out = renderMarkdown(['| 状态 | 说明 |', '|---|---|', '| ✅ | 通过 |', '| ❌ | 失败 |'].join('\n'))
+    const lines = stripAnsi(out).split('\n')
+    expect(new Set(lines.map(cellWidth)).size).toBe(1)
+    const barOffset = (line: string): number => cellWidth(line.slice(0, line.indexOf('│')))
+    expect(new Set(lines.filter(line => line.includes('│')).map(barOffset)).size).toBe(1)
+  })
+
   it('right-aligns and center-aligns columns per the delimiter row', () => {
     // Two data rows so each column has a narrower cell whose padding is
     // actually observable (a column's widest cell gets none by definition).
