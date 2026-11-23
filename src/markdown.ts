@@ -8,6 +8,7 @@
  * @module @tomowang/dsh-tui/markdown
  */
 
+import { wrapTextWithAnsi } from '@earendil-works/pi-tui'
 import { safeHyperlinkUrl } from './sanitize.js'
 import { theme, fg } from './tui/theme.js'
 
@@ -207,11 +208,76 @@ function padCell(styled: string, width: number, align: TableAlign): string {
   return styled + ' '.repeat(gap)
 }
 
-/** Pad one row of already-styled cells (header or body) to a single column-aligned line. */
-function formatTableRow(styledCells: readonly string[], widths: readonly number[], aligns: readonly TableAlign[], isHeader: boolean): string {
+/** Cell separator between two table columns. */
+const TABLE_GAP = ' │ '
+/** Narrowest a column may shrink to; below this a wrapped CJK cell would be one character per line. */
+const MIN_TABLE_COLUMN = 8
+
+/**
+ * Shrink natural column widths so the rendered table fits `maxWidth` terminal
+ * cells. Without this, one long cell (a paragraph in a "status" column) pushes
+ * the row past the terminal edge: the terminal soft-wraps it, and every `│`
+ * after the wrap lands mid-column, which is what a wide table looks like when
+ * it "breaks". Columns keep at least `MIN_TABLE_COLUMN` cells and never grow.
+ */
+function fitTableWidths(natural: readonly number[], maxWidth: number | undefined): number[] {
+  const gaps = TABLE_GAP.length * Math.max(0, natural.length - 1)
+  const sum = natural.reduce((total, width) => total + width, 0)
+  if (maxWidth === undefined || sum + gaps <= maxWidth) return natural.slice()
+
+  const budget = Math.max(natural.length * 2, maxWidth - gaps)
+  // On a terminal narrower than MIN_TABLE_COLUMN * columns there is no room
+  // for the comfortable floor; drop to an even split rather than overflowing.
+  const minColumn = Math.max(2, Math.min(MIN_TABLE_COLUMN, Math.floor(budget / natural.length)))
+  const scale = budget / sum
+  const widths = natural.map(width => Math.max(minColumn, Math.min(width, Math.floor(width * scale))))
+  let total = widths.reduce((acc, width) => acc + width, 0)
+  // Proportional shrink leaves rounding slack behind; trim the widest column
+  // one cell at a time until the table actually fits.
+  while (total > budget) {
+    let widest = -1
+    for (let i = 0; i < widths.length; i++) {
+      if (widths[i] > minColumn && (widest === -1 || widths[i] > widths[widest])) widest = i
+    }
+    if (widest === -1) break
+    widths[widest] -= 1
+    total -= 1
+  }
   return widths
-    .map((width, i) => padCell(isHeader ? bold(styledCells[i] ?? '') : styledCells[i] ?? '', width, aligns[i] ?? 'left'))
-    .join(dim(' │ '))
+}
+
+/** Word-wrap one already-styled cell to `width` terminal cells; empty cells still occupy one line. */
+function wrapTableCell(styled: string, width: number): string[] {
+  if (visibleLength(styled) <= width) return [styled]
+  const lines = wrapTextWithAnsi(styled, width)
+  return lines.length === 0 ? [''] : lines
+}
+
+/**
+ * Render one logical table row. Cells that wrap produce continuation lines
+ * padded to the same column widths, so the `│` boundaries stay aligned on
+ * every physical line instead of being redrawn by the terminal's own wrap.
+ */
+function formatTableRow(
+  styledCells: readonly string[],
+  widths: readonly number[],
+  aligns: readonly TableAlign[],
+  isHeader: boolean,
+): string[] {
+  const wrapped = widths.map((width, i) => {
+    const lines = wrapTableCell(styledCells[i] ?? '', width)
+    return isHeader ? lines.map(line => bold(line)) : lines
+  })
+  const height = Math.max(1, ...wrapped.map(lines => lines.length))
+  const out: string[] = []
+  for (let line = 0; line < height; line++) {
+    out.push(
+      widths
+        .map((width, i) => padCell(wrapped[i][line] ?? '', width, aligns[i] ?? 'left'))
+        .join(dim(TABLE_GAP)),
+    )
+  }
+  return out
 }
 
 /** A dim horizontal rule under the header row, with a cross at each column boundary. */
@@ -224,8 +290,13 @@ function formatTableRule(widths: readonly number[]): string {
  * inline code, block quotes, ordered/unordered lists, rules, tables, links,
  * bold, strikethrough, and emphasis. Text that `looksLikeMarkdown` rejects
  * passes through byte-for-byte unchanged.
+ *
+ * `maxWidth` bounds how wide a rendered table may get, in terminal cells;
+ * omit it to keep the table at its natural width (previous behaviour). Cells
+ * that no longer fit wrap inside their column instead of letting the terminal
+ * soft-wrap the row.
  */
-export function renderMarkdown(text: string): string {
+export function renderMarkdown(text: string, maxWidth?: number): string {
   if (!looksLikeMarkdown(text)) return text
 
   const out: string[] = []
@@ -251,13 +322,14 @@ export function renderMarkdown(text: string): string {
         }
 
         const columns = Math.max(styledHeader.length, ...styledRows.map(row => row.length), aligns.length)
-        const widths = Array.from({ length: columns }, (_, col) =>
+        const naturalWidths = Array.from({ length: columns }, (_, col) =>
           Math.max(visibleLength(styledHeader[col] ?? ''), ...styledRows.map(row => visibleLength(row[col] ?? ''))))
+        const widths = fitTableWidths(naturalWidths, maxWidth)
         const columnAligns = Array.from({ length: columns }, (_, col) => aligns[col] ?? 'left')
 
-        out.push(formatTableRow(styledHeader, widths, columnAligns, true))
+        out.push(...formatTableRow(styledHeader, widths, columnAligns, true))
         out.push(formatTableRule(widths))
-        for (const styledRow of styledRows) out.push(formatTableRow(styledRow, widths, columnAligns, false))
+        for (const styledRow of styledRows) out.push(...formatTableRow(styledRow, widths, columnAligns, false))
 
         i = j - 1
         continue

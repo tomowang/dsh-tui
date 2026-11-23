@@ -230,6 +230,29 @@ describe('renderMarkdown', () => {
     expect(new Set(lines.filter(line => line.includes('│')).map(barOffset)).size).toBe(1)
   })
 
+  it('wraps an overlong cell inside the table instead of overflowing maxWidth', () => {
+    // One status cell is a whole sentence: at its natural width the row would
+    // run past the terminal, which then soft-wraps it and leaves the following
+    // `│` separators mid-column. With maxWidth the table must wrap the cell
+    // instead, keeping every physical line within the budget and every `│` at
+    // the same column.
+    const doc = [
+      '| 模块 | 状态 |',
+      '|---|---|',
+      '| lab2 | arprtr、buggy、fnptr 都有实现，fnptr 的 numbers 三个 TODO 都补了，strings 去重做了 bsearch 版，另写了 lfind 版 strings1 |',
+    ].join('\n')
+    const lines = stripAnsi(renderMarkdown(doc, 40)).split('\n')
+    expect(lines.length).toBeGreaterThan(3)
+    expect(Math.max(...lines.map(cellWidth))).toBeLessThanOrEqual(40)
+    const barOffset = (line: string): number => cellWidth(line.slice(0, line.indexOf('│')))
+    expect(new Set(lines.filter(line => line.includes('│')).map(barOffset)).size).toBe(1)
+  })
+
+  it('keeps natural widths when the table already fits maxWidth', () => {
+    const doc = ['| a | b |', '|---|---|', '| 1 | 2 |'].join('\n')
+    expect(renderMarkdown(doc, 200)).toBe(renderMarkdown(doc))
+  })
+
   it('right-aligns and center-aligns columns per the delimiter row', () => {
     // Two data rows so each column has a narrower cell whose padding is
     // actually observable (a column's widest cell gets none by definition).
