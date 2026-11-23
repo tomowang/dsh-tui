@@ -8,6 +8,7 @@
  * @module @tomowang/dsh-tui/markdown
  */
 
+import { wrapTextWithAnsi } from '@earendil-works/pi-tui'
 import { safeHyperlinkUrl } from './sanitize.js'
 import { theme, fg } from './tui/theme.js'
 
@@ -127,6 +128,56 @@ function parseTableSeparator(line: string): TableAlign[] | null {
 // eslint-disable-next-line no-control-regex -- matching the ANSI escapes this module's own styling helpers emit requires their literal control bytes.
 const ANSI_RE = /\x1b\][^\x07]*\x07|\x1b\][^\x1b]*\x1b\\|\x1b\[[0-9;]*m/g
 
+const MARK_RE = /\p{Mn}|\p{Me}/u
+const EMOJI_PRESENTATION_RE = /\p{Emoji_Presentation}/u
+
+/** East Asian wide/fullwidth code points: CJK, Hangul, kana, fullwidth forms. */
+function isWideCodePoint(cp: number): boolean {
+  return (
+    (cp >= 0x1100 && cp <= 0x115f) ||
+    (cp >= 0x2329 && cp <= 0x232a) ||
+    (cp >= 0x2e80 && cp <= 0x303e) ||
+    (cp >= 0x3041 && cp <= 0x33ff) ||
+    (cp >= 0x3400 && cp <= 0x4dbf) ||
+    (cp >= 0x4e00 && cp <= 0x9fff) ||
+    (cp >= 0xa000 && cp <= 0xa4cf) ||
+    (cp >= 0xa960 && cp <= 0xa97f) ||
+    (cp >= 0xac00 && cp <= 0xd7a3) ||
+    (cp >= 0xf900 && cp <= 0xfaff) ||
+    (cp >= 0xfe10 && cp <= 0xfe19) ||
+    (cp >= 0xfe30 && cp <= 0xfe6f) ||
+    (cp >= 0xff00 && cp <= 0xff60) ||
+    (cp >= 0xffe0 && cp <= 0xffe6) ||
+    (cp >= 0x16fe0 && cp <= 0x18cff) ||
+    (cp >= 0x1b000 && cp <= 0x1b2ff) ||
+    (cp >= 0x20000 && cp <= 0x3fffd)
+  )
+}
+
+/**
+ * Terminal cell width of one code point: zero for controls, combining marks
+ * and zero-width characters, two for wide characters and emoji, one otherwise.
+ * `nextCp` is the code point that follows, so a variation selector 16 can
+ * widen its base character to the emoji presentation the terminal renders.
+ */
+function charWidth(cp: number, nextCp: number | undefined): number {
+  if (cp < 32 || (cp >= 0x7f && cp < 0xa0)) return 0
+  if (cp === 0x00ad || cp === 0x200b || cp === 0x200c || cp === 0x200d || cp === 0x2060 || cp === 0xfeff) return 0
+  if (cp >= 0xfe00 && cp <= 0xfe0f) return 0
+  const char = String.fromCodePoint(cp)
+  if (MARK_RE.test(char)) return 0
+  if (nextCp === 0xfe0f) return 2
+  return isWideCodePoint(cp) || EMOJI_PRESENTATION_RE.test(char) ? 2 : 1
+}
+
+/** Display width of escape-free text, in terminal cells. */
+function displayWidth(text: string): number {
+  const codePoints = Array.from(text, char => char.codePointAt(0) ?? 0)
+  let width = 0
+  for (let i = 0; i < codePoints.length; i++) width += charWidth(codePoints[i], codePoints[i + 1])
+  return width
+}
+
 /**
  * Visible length of an already-styled cell: ANSI escapes have string length
  * but no on-screen width, so measuring `styled.length` directly would
@@ -136,13 +187,14 @@ const ANSI_RE = /\x1b\][^\x07]*\x07|\x1b\][^\x1b]*\x1b\\|\x1b\[[0-9;]*m/g
  * `**bold**`'s raw text is 4 characters longer than what it renders as, so
  * a column sized from raw source overcounts a bold cell's true width, and
  * that same bold cell then looks "wide enough" and gets under-padded
- * relative to its plain siblings. Like the rest of this module, "visible"
- * means UTF-16 code units after stripping escapes, not a true display-width
- * count, so a wide/astral cell (CJK, emoji) can still under-pad — a known
- * limitation shared with the fixed-width horizontal rule below.
+ * relative to its plain siblings. Width is measured in terminal cells, not
+ * UTF-16 code units: CJK text and emoji occupy two cells per code point and
+ * combining marks occupy none, so a table stays aligned when its cells mix
+ * scripts. Treating the cell's length as its width would make every column
+ * with a wide character too narrow.
  */
 function visibleLength(styled: string): number {
-  return styled.replace(ANSI_RE, '').length
+  return displayWidth(styled.replace(ANSI_RE, ''))
 }
 
 /** Pad an already-styled cell out to `width`, measuring by `visibleLength` rather than `styled.length`. */
@@ -156,11 +208,76 @@ function padCell(styled: string, width: number, align: TableAlign): string {
   return styled + ' '.repeat(gap)
 }
 
-/** Pad one row of already-styled cells (header or body) to a single column-aligned line. */
-function formatTableRow(styledCells: readonly string[], widths: readonly number[], aligns: readonly TableAlign[], isHeader: boolean): string {
+/** Cell separator between two table columns. */
+const TABLE_GAP = ' │ '
+/** Narrowest a column may shrink to; below this a wrapped CJK cell would be one character per line. */
+const MIN_TABLE_COLUMN = 8
+
+/**
+ * Shrink natural column widths so the rendered table fits `maxWidth` terminal
+ * cells. Without this, one long cell (a paragraph in a "status" column) pushes
+ * the row past the terminal edge: the terminal soft-wraps it, and every `│`
+ * after the wrap lands mid-column, which is what a wide table looks like when
+ * it "breaks". Columns keep at least `MIN_TABLE_COLUMN` cells and never grow.
+ */
+function fitTableWidths(natural: readonly number[], maxWidth: number | undefined): number[] {
+  const gaps = TABLE_GAP.length * Math.max(0, natural.length - 1)
+  const sum = natural.reduce((total, width) => total + width, 0)
+  if (maxWidth === undefined || sum + gaps <= maxWidth) return natural.slice()
+
+  const budget = Math.max(natural.length * 2, maxWidth - gaps)
+  // On a terminal narrower than MIN_TABLE_COLUMN * columns there is no room
+  // for the comfortable floor; drop to an even split rather than overflowing.
+  const minColumn = Math.max(2, Math.min(MIN_TABLE_COLUMN, Math.floor(budget / natural.length)))
+  const scale = budget / sum
+  const widths = natural.map(width => Math.max(minColumn, Math.min(width, Math.floor(width * scale))))
+  let total = widths.reduce((acc, width) => acc + width, 0)
+  // Proportional shrink leaves rounding slack behind; trim the widest column
+  // one cell at a time until the table actually fits.
+  while (total > budget) {
+    let widest = -1
+    for (let i = 0; i < widths.length; i++) {
+      if (widths[i] > minColumn && (widest === -1 || widths[i] > widths[widest])) widest = i
+    }
+    if (widest === -1) break
+    widths[widest] -= 1
+    total -= 1
+  }
   return widths
-    .map((width, i) => padCell(isHeader ? bold(styledCells[i] ?? '') : styledCells[i] ?? '', width, aligns[i] ?? 'left'))
-    .join(dim(' │ '))
+}
+
+/** Word-wrap one already-styled cell to `width` terminal cells; empty cells still occupy one line. */
+function wrapTableCell(styled: string, width: number): string[] {
+  if (visibleLength(styled) <= width) return [styled]
+  const lines = wrapTextWithAnsi(styled, width)
+  return lines.length === 0 ? [''] : lines
+}
+
+/**
+ * Render one logical table row. Cells that wrap produce continuation lines
+ * padded to the same column widths, so the `│` boundaries stay aligned on
+ * every physical line instead of being redrawn by the terminal's own wrap.
+ */
+function formatTableRow(
+  styledCells: readonly string[],
+  widths: readonly number[],
+  aligns: readonly TableAlign[],
+  isHeader: boolean,
+): string[] {
+  const wrapped = widths.map((width, i) => {
+    const lines = wrapTableCell(styledCells[i] ?? '', width)
+    return isHeader ? lines.map(line => bold(line)) : lines
+  })
+  const height = Math.max(1, ...wrapped.map(lines => lines.length))
+  const out: string[] = []
+  for (let line = 0; line < height; line++) {
+    out.push(
+      widths
+        .map((width, i) => padCell(wrapped[i][line] ?? '', width, aligns[i] ?? 'left'))
+        .join(dim(TABLE_GAP)),
+    )
+  }
+  return out
 }
 
 /** A dim horizontal rule under the header row, with a cross at each column boundary. */
@@ -173,8 +290,13 @@ function formatTableRule(widths: readonly number[]): string {
  * inline code, block quotes, ordered/unordered lists, rules, tables, links,
  * bold, strikethrough, and emphasis. Text that `looksLikeMarkdown` rejects
  * passes through byte-for-byte unchanged.
+ *
+ * `maxWidth` bounds how wide a rendered table may get, in terminal cells;
+ * omit it to keep the table at its natural width (previous behaviour). Cells
+ * that no longer fit wrap inside their column instead of letting the terminal
+ * soft-wrap the row.
  */
-export function renderMarkdown(text: string): string {
+export function renderMarkdown(text: string, maxWidth?: number): string {
   if (!looksLikeMarkdown(text)) return text
 
   const out: string[] = []
@@ -200,13 +322,14 @@ export function renderMarkdown(text: string): string {
         }
 
         const columns = Math.max(styledHeader.length, ...styledRows.map(row => row.length), aligns.length)
-        const widths = Array.from({ length: columns }, (_, col) =>
+        const naturalWidths = Array.from({ length: columns }, (_, col) =>
           Math.max(visibleLength(styledHeader[col] ?? ''), ...styledRows.map(row => visibleLength(row[col] ?? ''))))
+        const widths = fitTableWidths(naturalWidths, maxWidth)
         const columnAligns = Array.from({ length: columns }, (_, col) => aligns[col] ?? 'left')
 
-        out.push(formatTableRow(styledHeader, widths, columnAligns, true))
+        out.push(...formatTableRow(styledHeader, widths, columnAligns, true))
         out.push(formatTableRule(widths))
-        for (const styledRow of styledRows) out.push(formatTableRow(styledRow, widths, columnAligns, false))
+        for (const styledRow of styledRows) out.push(...formatTableRow(styledRow, widths, columnAligns, false))
 
         i = j - 1
         continue

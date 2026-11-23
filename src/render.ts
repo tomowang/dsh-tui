@@ -30,6 +30,17 @@ const green = fg(theme.success)
 const yellow = fg(theme.warning)
 const violet = fg(theme.reasoning)
 
+/**
+ * Cell budget a rendered table may use: the terminal width minus the
+ * transcript's two-cell margins on either side. Falls back to 100 columns
+ * when stdout is not a TTY, and never drops below 20 so a table still has
+ * room to lay out on a very narrow terminal.
+ */
+function tableWidth(): number {
+  const columns = process.stdout.columns
+  return columns === undefined || columns <= 0 ? 100 : Math.max(20, columns - 4)
+}
+
 /** Line cap for a settled shell-escape (`!`) run's body in the permanent transcript; `<Static>` prints can't be redrawn, so a long run is summarized there — tool calls/results don't use this cap, since the transcript only ever shows their one-line collapsed summary (see `formatToolCardSummary`), with full detail available via `formatToolCardDetail` in the Tool Cards overlay. */
 const MAX_CARD_LINES = 20
 /** `diff` package's `maxEditLength`: bounds worst-case diff cost on a huge file, mirroring the removed first-party TUI's default. */
@@ -72,7 +83,7 @@ function formatReasoningSummary(text: string): string {
 export function formatSettledMessage(text: string, reasoningText: string): string | undefined {
   const parts: string[] = []
   if (reasoningText !== '') parts.push(formatReasoningSummary(reasoningText))
-  if (text !== '') parts.push(renderMarkdown(text))
+  if (text !== '') parts.push(renderMarkdown(text, tableWidth()))
   return parts.length === 0 ? undefined : `\n${parts.join('\n')}\n`
 }
 
@@ -89,7 +100,7 @@ export function formatStreamingText(text: string, reasoningText = '', spinnerCha
   if (text === '') return `\n${violet(`${spinnerChar} thinking`)}\n`
   // Sanitized over the whole accumulated text on every render, so an escape
   // split across two stream deltas can't slip through either half.
-  return `\n${renderMarkdown(sanitizeTerminalText(text))}\n`
+  return `\n${renderMarkdown(sanitizeTerminalText(text), tableWidth())}\n`
 }
 
 /** One local shell-escape run's header + output lines, shared by the settled and in-flight renderers below. `exitCode` is `null` while still running. */

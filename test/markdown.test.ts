@@ -198,6 +198,61 @@ describe('renderMarkdown', () => {
     expect(lines).toEqual(['Note', '────', 'abc ', 'xyz '])
   })
 
+  // Terminal cell width for the scripts used below: CJK ideographs and
+  // emoji-presentation characters occupy two cells, everything else one.
+  // Deliberately independent of the renderer's own width ranges.
+  const cellWidth = (s: string): number => {
+    let width = 0
+    for (const char of s) {
+      const cp = char.codePointAt(0) ?? 0
+      width += (cp >= 0x2e80 && cp <= 0x9fff) || /\p{Emoji_Presentation}/u.test(char) ? 2 : 1
+    }
+    return width
+  }
+
+  it('sizes columns by terminal cell width when cells contain CJK text', () => {
+    const out = renderMarkdown(
+      ['| 颜色 | 数法 |', '|---|---|', '| 白白 | 从 4 个白球里选 2 个 |', '| 一白一黑 | 1 个白 × 1 个黑 |'].join('\n'),
+    )
+    const lines = stripAnsi(out).split('\n')
+    // Every row pads to the same total width, so the row's closing '│' lands
+    // on the same terminal cell even though the rows' UTF-16 lengths differ.
+    expect(new Set(lines.map(cellWidth)).size).toBe(1)
+    const barOffset = (line: string): number => cellWidth(line.slice(0, line.indexOf('│')))
+    expect(new Set(lines.filter(line => line.includes('│')).map(barOffset)).size).toBe(1)
+  })
+
+  it('sizes columns by terminal cell width when cells contain emoji', () => {
+    const out = renderMarkdown(['| 状态 | 说明 |', '|---|---|', '| ✅ | 通过 |', '| ❌ | 失败 |'].join('\n'))
+    const lines = stripAnsi(out).split('\n')
+    expect(new Set(lines.map(cellWidth)).size).toBe(1)
+    const barOffset = (line: string): number => cellWidth(line.slice(0, line.indexOf('│')))
+    expect(new Set(lines.filter(line => line.includes('│')).map(barOffset)).size).toBe(1)
+  })
+
+  it('wraps an overlong cell inside the table instead of overflowing maxWidth', () => {
+    // One status cell is a whole sentence: at its natural width the row would
+    // run past the terminal, which then soft-wraps it and leaves the following
+    // `│` separators mid-column. With maxWidth the table must wrap the cell
+    // instead, keeping every physical line within the budget and every `│` at
+    // the same column.
+    const doc = [
+      '| 模块 | 状态 |',
+      '|---|---|',
+      '| lab2 | arprtr、buggy、fnptr 都有实现，fnptr 的 numbers 三个 TODO 都补了，strings 去重做了 bsearch 版，另写了 lfind 版 strings1 |',
+    ].join('\n')
+    const lines = stripAnsi(renderMarkdown(doc, 40)).split('\n')
+    expect(lines.length).toBeGreaterThan(3)
+    expect(Math.max(...lines.map(cellWidth))).toBeLessThanOrEqual(40)
+    const barOffset = (line: string): number => cellWidth(line.slice(0, line.indexOf('│')))
+    expect(new Set(lines.filter(line => line.includes('│')).map(barOffset)).size).toBe(1)
+  })
+
+  it('keeps natural widths when the table already fits maxWidth', () => {
+    const doc = ['| a | b |', '|---|---|', '| 1 | 2 |'].join('\n')
+    expect(renderMarkdown(doc, 200)).toBe(renderMarkdown(doc))
+  })
+
   it('right-aligns and center-aligns columns per the delimiter row', () => {
     // Two data rows so each column has a narrower cell whose padding is
     // actually observable (a column's widest cell gets none by definition).
